@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-import  {ERC4626 } from "solmate/mixins/ERC4626.sol";
+import { ERC4626 } from "solmate/mixins/ERC4626.sol";
 import { ERC20 } from "solmate/tokens/ERC20.sol";
 import { SafeTransferLib } from "solmate/utils/SafeTransferLib.sol";
 import { FixedPointMathLib } from "solmate/utils/FixedPointMathLib.sol";
@@ -11,7 +11,6 @@ import { ILiquidityPool } from "./interfaces/ILiquidityPool.sol";
 import { IOptionExchange } from "./interfaces/IOptionExchange.sol";
 import { IOptionRegistry } from "./interfaces/IOptionRegistry.sol";
 import { IController } from "./interfaces/IGammaInterface.sol";
-
 
 /// @notice High Order Market Making Vault (HOMM Vault)
 contract Vault is ERC4626 {
@@ -145,11 +144,11 @@ contract Vault is ERC4626 {
      * @notice deposit liquidity into Rysk liquidity pool
      * @param _amount amount of liquidity to deposit into Rysk Liq Pool
      */
-    function depositLiquidity(uint256 _amount) public {
+    function depositLiquidity(uint256 _amount) public returns (bool) {
         if (msg.sender != fundOperator) revert OnlyFundOperator();
 
         // deposit liquidity to liquidity pool
-        ILiquidityPool(liquidityPool).deposit(_amount);
+        return ILiquidityPool(liquidityPool).deposit(_amount);
     }
 
     /** 
@@ -166,11 +165,11 @@ contract Vault is ERC4626 {
     /**
      * @notice complete withdrawal from Rysk liquidity pool using existing reciept
      */
-    function completeWithdraw() public {
+    function completeWithdraw() public returns (uint256) {
         if (msg.sender != fundOperator) revert OnlyFundOperator();
 
         // withdraw liquidity from liquidity pool
-        ILiquidityPool(liquidityPool).completeWithdraw();
+        return ILiquidityPool(liquidityPool).completeWithdraw();
     }
 
     /// @notice OptionExchange Functions ////////////////////////
@@ -230,12 +229,12 @@ contract Vault is ERC4626 {
 
     /**
      * @notice redeem option series on Rysk
-     * @param _series OptionSeries struct containing option series parameters
+     * @param _series the address of the option token to be burnt and redeemed
      */
-    function redeemOptionTokens(address _series) public {
+    function redeemOptionTokens(address _series) public returns (uint256) {
         if (msg.sender != fundOperator) revert OnlyFundOperator();
 
         // redeem option tokens
-        IOptionRegistry(optionRegistry).redeem(_series);
+        return IOptionRegistry(optionRegistry).redeem(_series);
     }
 }
