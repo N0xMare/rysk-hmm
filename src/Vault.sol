@@ -48,7 +48,7 @@ contract Vault is ERC4626 {
     /*                     CONSTRUCTOR                            */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @notice constructor parameters
+    /// @notice constructor parameters | solmate ERC4626 implementation
     /// @param _controller controller contract we need to call setOperator on to approve use of OptionExchange
     /// @param _asset underlying vault asset (USDC)
     /// @param _optionExchange option exchange contract
@@ -76,50 +76,58 @@ contract Vault is ERC4626 {
     /*                  EXTERNAL USER FUNCTIONS                   */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @notice deposit "asset" into vault
-    // Mints "shares" Vault shares to "receiver" by depositing exactly "assets" of underlying tokens.
+    /**
+     * @notice deposit "assets" (USDC) into vault
+     * @param assets amount of "assets" (USDC) to deposit
+     * @param receiver address to send "shares" (HOMM) to
+     */
     function deposit(uint256 assets, address receiver) public override returns (uint256 shares) {
-        //extra logic
         if (this.isLocked()) revert LiquidityLocked();
         // deposit
         super.deposit(assets, receiver);
     }
 
-    /// @notice mint HOMM
-    // Mints exactly "shares" Vault shares to "receiver" by depositing "assets" (USDC) of underlying tokens.
+    /**
+     * @notice mint "shares" Vault shares (HOMM) to "receiver" by depositing "assets" (USDC) of underlying tokens.
+     */
     function mint(uint256 shares, address receiver) public override returns (uint256 assets) {
-        // extra logic
         if (this.isLocked()) revert LiquidityLocked();
         // mint
         super.mint(shares, receiver);
     }
 
-    /// @notice withdraw "asset" from vault
-    // Burns "shares" from owner and sends exactly "assets" (USDC) of underlying tokens to "receiver".
+    /**
+     * @notice withdraw "asset" from vault
+     * @param assets amount of "asset" (USDC) to withdraw
+     * @param receiver address to send "asset" (USDC) to
+     * @param owner address of owner
+     */
     function withdraw(uint256 assets, address receiver, address owner) public override returns (uint256 shares) {
-        // extra logic
         if (this.isLocked()) revert LiquidityLocked();
-        //if () revert OperatorActive();
         // withdraw
         super.withdraw(assets, receiver, owner);
     }
 
-    /// @notice burn HOMM
-    // Burns exactly "shares" from owner and sends "assets" (USDC) of underlying tokens to "receiver".
+    /**
+     * @notice burn "shares" Vault shares (HOMM) from "owner" and sends "assets" (USDC) of underlying tokens to "receiver".
+     */
     function redeem(uint256 shares, address receiver, address owner) public override returns (uint256 assets) {
-        // extra logic
         if (this.isLocked()) revert LiquidityLocked();
         //if () revert OperatorActive();
         // burn
         super.redeem(shares, receiver, owner);
     }
 
-    /// @notice return balanceOf "asset" (USDC) held by this contract
+    /**
+     * @notice Returns the total amount of "assets" (USDC) held by this contract.
+     */
     function totalAssets() public view override returns (uint256 assets) {
         return asset.balanceOf(address(this));
     }
 
-    /// @notice return true if vault is locked
+    /**
+     * @notice Returns true if deposits/withdraws are locked
+     */
     function isLocked() external view returns (bool) {
         // compute # of epochs so far
         uint256 epochs = (block.timestamp - startEpoch) / (LIQUIDITY_LOCK_PERIOD + LIQUIDITY_UNLOCK_PERIOD);
@@ -133,6 +141,10 @@ contract Vault is ERC4626 {
 
     /// @notice Liquidity Pool Functions ///////////////////////////
 
+    /**
+     * @notice deposit liquidity into Rysk liquidity pool
+     * @param _amount amount of liquidity to deposit into Rysk Liq Pool
+     */
     function depositLiquidity(uint256 _amount) public {
         if (msg.sender != fundOperator) revert OnlyFundOperator();
 
@@ -140,7 +152,10 @@ contract Vault is ERC4626 {
         ILiquidityPool(liquidityPool).deposit(_amount);
     }
 
-    // generate withdrawal reciept for share amount operator input
+    /** 
+     * @notice generate Rysk withdrawal reciept for share amount operator input
+     * @param _shares amount of shares to withdraw from Rysk Liq Pool
+     */
     function initiateWithdraw(uint256 _shares) public {
         if (msg.sender != fundOperator) revert OnlyFundOperator();
 
@@ -148,7 +163,9 @@ contract Vault is ERC4626 {
         ILiquidityPool(liquidityPool).initiateWithdraw(_shares);
     }
 
-    // complete withdrawal from liquidity pool using existing reciept
+    /**
+     * @notice complete withdrawal from Rysk liquidity pool using existing reciept
+     */
     function completeWithdraw() public {
         if (msg.sender != fundOperator) revert OnlyFundOperator();
 
@@ -158,7 +175,8 @@ contract Vault is ERC4626 {
 
     /// @notice OptionExchange Functions ////////////////////////
 
-    /**
+    /** Struct specification for OperateProcedure
+    
     struct OptionSeries {
 		uint64 expiration;
 		uint128 strike;
@@ -197,6 +215,10 @@ contract Vault is ERC4626 {
     }
      */
     
+    /**
+     * @notice trade options on Rysk
+     * @param _operateProcedures array of operation procedures to execute on Rysk
+     */
     function tradeOption(IOptionExchange.OperationProcedures[] memory _operateProcedures) public {
         if (msg.sender != fundOperator) revert OnlyFundOperator();
 
@@ -206,6 +228,10 @@ contract Vault is ERC4626 {
 
     /// @notice OptionRegistry ///////////////////////////////////
 
+    /**
+     * @notice redeem option series on Rysk
+     * @param _series OptionSeries struct containing option series parameters
+     */
     function redeemOptionTokens(address _series) public {
         if (msg.sender != fundOperator) revert OnlyFundOperator();
 
