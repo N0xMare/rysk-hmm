@@ -10,6 +10,7 @@ import { FixedPointMathLib } from "solmate/utils/FixedPointMathLib.sol";
 import { ILiquidityPool } from "./interfaces/ILiquidityPool.sol";
 import { IOptionExchange } from "./interfaces/IOptionExchange.sol";
 import { IOptionRegistry } from "./interfaces/IOptionRegistry.sol";
+import { IController } from "./interfaces/IGammaInterface.sol";
 
 
 /// @notice High Order Market Making Vault (HOMM Vault)
@@ -18,14 +19,22 @@ contract Vault is ERC4626 {
     using SafeTransferLib for ERC20;
     using FixedPointMathLib for uint256;
 
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                        ERRORS                              */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
     error LiquidityLocked();
     error InsufficientAmount();
-    error OnlyOperator();
+    error OnlyFundOperator();
 
-    // operator
-    address public operator;
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                        STORAGE                             */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    // strategy contract
+    /// @notice operator
+    address public fundOperator;
+
+    /// @notice strategy contracts
     ILiquidityPool public liquidityPool;
     IOptionExchange public optionExchange;
     IOptionRegistry public optionRegistry;
@@ -35,16 +44,39 @@ contract Vault is ERC4626 {
     uint256 internal constant LIQUIDITY_UNLOCK_PERIOD = 1 days;
     uint256 internal startEpoch;
 
-    // ERC20("HOMM Pool Token", "HOMM")
-    constructor(address _asset, address _optionExchange, address _optionRegistry, address _liquityPool) ERC4626(ERC20(_asset), "HOMM Pool Token", "HOMM") {
-        operator = msg.sender;
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                     CONSTRUCTOR                            */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    /// @notice constructor parameters
+    /// @param _controller controller contract we need to call setOperator on to approve use of OptionExchange
+    /// @param _asset underlying vault asset (USDC)
+    /// @param _optionExchange option exchange contract
+    /// @param _optionRegistry option registry contract
+    /// @param _liquityPool liquidity pool contract
+    constructor(
+        IController _controller,
+        address _asset,
+        address _optionExchange,
+        address _optionRegistry,
+        address _liquityPool) 
+        ERC4626(ERC20(_asset), "HOMM Pool Token", "HOMM") 
+        {
+        // set fund operator
+        fundOperator = msg.sender;
         optionExchange = IOptionExchange(_optionExchange);
         optionRegistry = IOptionRegistry(_optionRegistry);
         liquidityPool = ILiquidityPool(_liquityPool);
         startEpoch = block.timestamp;
+        // set optionExchange as operator in controller
+        _controller.setOperator(address(optionExchange), true);
     }
 
-    // deposit USDC
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                  EXTERNAL USER FUNCTIONS                   */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    /// @notice deposit "asset" into vault
     // Mints "shares" Vault shares to "receiver" by depositing exactly "assets" of underlying tokens.
     function deposit(uint256 assets, address receiver) public override returns (uint256 shares) {
         //extra logic
@@ -53,8 +85,8 @@ contract Vault is ERC4626 {
         super.deposit(assets, receiver);
     }
 
-    // mint HOMM
-    // Mints exactly "shares" Vault shares to "receiver" by depositing "assets" of underlying tokens.
+    /// @notice mint HOMM
+    // Mints exactly "shares" Vault shares to "receiver" by depositing "assets" (USDC) of underlying tokens.
     function mint(uint256 shares, address receiver) public override returns (uint256 assets) {
         // extra logic
         if (this.isLocked()) revert LiquidityLocked();
@@ -62,8 +94,8 @@ contract Vault is ERC4626 {
         super.mint(shares, receiver);
     }
 
-    // withdraw USDC
-    // Burns "shares" from owner and sends exactly "assets" of underlying tokens to "receiver".
+    /// @notice withdraw "asset" from vault
+    // Burns "shares" from owner and sends exactly "assets" (USDC) of underlying tokens to "receiver".
     function withdraw(uint256 assets, address receiver, address owner) public override returns (uint256 shares) {
         // extra logic
         if (this.isLocked()) revert LiquidityLocked();
@@ -72,8 +104,8 @@ contract Vault is ERC4626 {
         super.withdraw(assets, receiver, owner);
     }
 
-    // burn HOMM
-    // Burns exactly "shares" from owner and sends "assets" of underlying tokens to "receiver".
+    /// @notice burn HOMM
+    // Burns exactly "shares" from owner and sends "assets" (USDC) of underlying tokens to "receiver".
     function redeem(uint256 shares, address receiver, address owner) public override returns (uint256 assets) {
         // extra logic
         if (this.isLocked()) revert LiquidityLocked();
@@ -82,11 +114,12 @@ contract Vault is ERC4626 {
         super.redeem(shares, receiver, owner);
     }
 
-    /// @notice return balanceOf USDC held by this contract
+    /// @notice return balanceOf "asset" (USDC) held by this contract
     function totalAssets() public view override returns (uint256 assets) {
         return asset.balanceOf(address(this));
     }
 
+    /// @notice return true if vault is locked
     function isLocked() external view returns (bool) {
         // compute # of epochs so far
         uint256 epochs = (block.timestamp - startEpoch) / (LIQUIDITY_LOCK_PERIOD + LIQUIDITY_UNLOCK_PERIOD);
@@ -94,14 +127,14 @@ contract Vault is ERC4626 {
         return block.timestamp > t0 && block.timestamp < t0 + LIQUIDITY_LOCK_PERIOD;
     }
 
-    /// @notice Operator only functions
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                  FUND OPERATOR FUNCTIONS                   */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    //////////////////////////////////////////////////////////////
-    /// @notice Liquidity Pool 
-    //////////////////////////////////////////////////////////////
+    /// @notice Liquidity Pool Functions ///////////////////////////
 
     function depositLiquidity(uint256 _amount) public {
-        if (msg.sender != operator) revert OnlyOperator();
+        if (msg.sender != fundOperator) revert OnlyFundOperator();
 
         // deposit liquidity to liquidity pool
         ILiquidityPool(liquidityPool).deposit(_amount);
@@ -109,7 +142,7 @@ contract Vault is ERC4626 {
 
     // generate withdrawal reciept for share amount operator input
     function initiateWithdraw(uint256 _shares) public {
-        if (msg.sender != operator) revert OnlyOperator();
+        if (msg.sender != fundOperator) revert OnlyFundOperator();
 
         // initiate withdraw liquidity from liquidity pool
         ILiquidityPool(liquidityPool).initiateWithdraw(_shares);
@@ -117,15 +150,13 @@ contract Vault is ERC4626 {
 
     // complete withdrawal from liquidity pool using existing reciept
     function completeWithdraw() public {
-        if (msg.sender != operator) revert OnlyOperator();
+        if (msg.sender != fundOperator) revert OnlyFundOperator();
 
         // withdraw liquidity from liquidity pool
         ILiquidityPool(liquidityPool).completeWithdraw();
     }
 
-    //////////////////////////////////////////////////////////////
-    /// @notice OptionExchange
-    //////////////////////////////////////////////////////////////
+    /// @notice OptionExchange Functions ////////////////////////
 
     /**
     struct OptionSeries {
@@ -165,34 +196,20 @@ contract Vault is ERC4626 {
         CombinedActions.ActionArgs[] operationQueue;
     }
      */
+    
     function tradeOption(IOptionExchange.OperationProcedures[] memory _operateProcedures) public {
-        if (msg.sender != operator) revert OnlyOperator();
+        if (msg.sender != fundOperator) revert OnlyFundOperator();
 
         // make trade with capital within this contract
         IOptionExchange(optionExchange).operate(_operateProcedures);
     }
 
-    //////////////////////////////////////////////////////////////
-    /// @notice OptionRegistry
-    //////////////////////////////////////////////////////////////
+    /// @notice OptionRegistry ///////////////////////////////////
 
     function redeemOptionTokens(address _series) public {
-        if (msg.sender != operator) revert OnlyOperator();
+        if (msg.sender != fundOperator) revert OnlyFundOperator();
 
         // redeem option tokens
         IOptionRegistry(optionRegistry).redeem(_series);
     }
-
-    //////////////////////////////////////////////////////////////
-    /// @notice Controller
-    //////////////////////////////////////////////////////////////
-
-
-
-    /// @notice Liquidation Stuff
-
-    //function liquidate(uint256 _seriesId) public {
-    //    if (msg.sender != operator) revert OnlyOperator();
-    //    // liquidate 
-    //}
 }
