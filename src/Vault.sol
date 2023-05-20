@@ -176,7 +176,7 @@ contract Vault is ERC4626 {
     /// @notice OptionExchange Functions ////////////////////////
 
     /** Struct specification for OperateProcedure
-    
+
     struct OptionSeries {
 		uint64 expiration;
 		uint128 strike;
@@ -219,7 +219,7 @@ contract Vault is ERC4626 {
      * @notice trade options on Rysk
      * @param _operateProcedures array of operation procedures to execute on Rysk
      */
-    function tradeOption(IOptionExchange.OperationProcedures[] memory _operateProcedures) public {
+    function trade(IOptionExchange.OperationProcedures[] memory _operateProcedures) public {
         if (msg.sender != fundOperator) revert OnlyFundOperator();
 
         // make trade with capital within this contract
