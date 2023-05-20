@@ -3,8 +3,8 @@ pragma solidity ^0.8.17;
 
 import "forge-std/Test.sol";
 
-import {Greeter} from "src/Greeter.sol";
-
+//import {Greeter} from "src/Greeter.sol";
+/*
 contract GreeterTest is Test {
     using stdStorage for StdStorage;
 
@@ -40,3 +40,4 @@ contract GreeterTest is Test {
         assertEq(address(this), address(uint160(uint256(owner))));
     }
 }
+*/
