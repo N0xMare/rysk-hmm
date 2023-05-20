@@ -127,7 +127,44 @@ contract Vault is ERC4626 {
     /// @notice OptionExchange
     //////////////////////////////////////////////////////////////
 
+    /**
+    struct OptionSeries {
+		uint64 expiration;
+		uint128 strike;
+		bool isPut;
+		address underlying;
+		address strikeAsset;
+		address collateral;
+	}
 
+    enum ActionType {
+        Issue,
+        BuyOption,
+        SellOption,
+        CloseOption
+    }
+
+    struct ActionArgs {
+        ActionType actionType;
+        address secondAddress;
+        address asset;
+        uint256 vaultId;
+        uint256 amount;
+        Types.OptionSeries optionSeries;
+        uint256 acceptablePremium;
+        bytes data;
+    }
+
+    enum OperationType {
+		OPYN,
+		RYSK
+	}
+
+    struct OperationProcedures {
+        CombinedActions.OperationType operation;
+        CombinedActions.ActionArgs[] operationQueue;
+    }
+     */
     function tradeOption(IOptionExchange.OperationProcedures[] memory _operateProcedures) public {
         if (msg.sender != operator) revert OnlyOperator();
 
@@ -145,6 +182,12 @@ contract Vault is ERC4626 {
         // redeem option tokens
         IOptionRegistry(optionRegistry).redeem(_series);
     }
+
+    //////////////////////////////////////////////////////////////
+    /// @notice Controller
+    //////////////////////////////////////////////////////////////
+
+
 
     /// @notice Liquidation Stuff
 

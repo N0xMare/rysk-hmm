@@ -10,5 +10,5 @@ interface IOptionExchange {
         CombinedActions.ActionArgs[] operationQueue;
     }
 
-    function operate(OperationProcedures[] memory _operationProceduresa) external;
+    function operate(OperationProcedures[] memory _operationProcedures) external;
 }
