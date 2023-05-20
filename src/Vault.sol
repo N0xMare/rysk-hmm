@@ -178,12 +178,12 @@ contract Vault is ERC4626 {
     /** Struct specification for OperateProcedure
 
     struct OptionSeries {
-		uint64 expiration;
-		uint128 strike;
-		bool isPut;
-		address underlying;
-		address strikeAsset;
-		address collateral;
+        uint64 expiration;
+        uint128 strike;
+        bool isPut;
+        address underlying;
+        address strikeAsset;
+        address collateral;
 	}
 
     enum ActionType {
@@ -205,15 +205,15 @@ contract Vault is ERC4626 {
     }
 
     enum OperationType {
-		OPYN,
-		RYSK
-	}
+        OPYN,
+        RYSK
+    }
 
     struct OperationProcedures {
         CombinedActions.OperationType operation;
         CombinedActions.ActionArgs[] operationQueue;
     }
-     */
+    */
     
     /**
      * @notice trade options on Rysk
