@@ -4,6 +4,7 @@ pragma solidity ^0.8.19;
 import "forge-std/Test.sol";
 import "forge-std/Vm.sol";
 import "forge-std/console2.sol";
+import "solmate/tokens/ERC20.sol";
 
 // contracts
 import { Vault } from "../src/Vault.sol";
@@ -22,41 +23,38 @@ contract VaultTest is Test {
     string RPC_ARB_GOERLI = vm.envString("ARBI_GOERLI_RPC_URL");
 
     // asset (underlying vault asset, arb goerli rysk USDC)
-    address public usdc = 0x408c5755b5c7a0a28D851558eA3636CfC5b5b19d;
 
     // rysk & opyn contracts
     IController public controller;
     IOptionExchange public optionExchange;
     IOptionRegistry public optionRegistry;
     ILiquidityPool public liquidityPool;
+    //ERC20 public USDC = ERC20(0x408c5755b5c7a0a28D851558eA3636CfC5b5b19d);
+    ERC20 public MockERC20;
 
     // vault
     Vault vault;
 
     function setUp() external {
 
-        setRyskContracts();
+        controller = IController(0x8e3e84E7F207b0b66BD8D902C293cF269C67a168);
+        optionExchange = IOptionExchange(0xb672fE86693bF6f3b034730f5d2C77C8844d6b45);
+        optionRegistry = IOptionRegistry(0x4E89cc3215AF050Ceb63Ca62470eeC7C1A66F737);
+        liquidityPool = ILiquidityPool(0x0B1Bf5fb77AA36cD48Baa1395Bc2B5fa0f135d8C);
 
         // deploy vault
-        vault = new Vault(
+        /*vault = new Vault(
+            USDC,
             controller,
-            usdc,
             address(optionExchange),
             address(optionRegistry),
             address(liquidityPool)
-        );
+        );*/
 
+        // assert operator set
+        //assertEq(controller.isOperator(address(this), address(vault)), true);
     }
 
-    function setRyskContracts() external {
-        controller = IController(0x8e3e84E7F207b0b66BD8D902C293cF269C67a168);
-        optionExchange = IOptionExchange(0x39246c4f3F6592C974ebc44F80ba6dc69B817C71);
-        optionRegistry = IOptionRegistry(0x7F4B2A690605A7cbb66F7AA6885EbD906a5e2E9E);
-        liquidityPool = ILiquidityPool(0xEd6BcbF6907D4feEEe8a8875543249bEa9D308E8);
-    }
-
-    // VM Cheatcodes can be found in ./lib/forge-std/src/Vm.sol
-    // Or at https://github.com/foundry-rs/forge-std
     function testCalls() external {
         
     }

@@ -10,7 +10,10 @@ import { FixedPointMathLib } from "solmate/utils/FixedPointMathLib.sol";
 import { ILiquidityPool } from "./interfaces/ILiquidityPool.sol";
 import { IOptionExchange } from "./interfaces/IOptionExchange.sol";
 import { IOptionRegistry } from "./interfaces/IOptionRegistry.sol";
+import { IAccounting } from "./interfaces/IAccounting.sol";
 import { IController } from "./interfaces/IGammaInterface.sol";
+import { IBeyondPricer } from "./interfaces/IBeyondPricer.sol";
+import { Types } from "./libraries/Types.sol";
 
 /// @notice High Order Market Making Vault (HOMM Vault)
 contract Vault is ERC4626 {
@@ -37,6 +40,7 @@ contract Vault is ERC4626 {
     ILiquidityPool public liquidityPool;
     IOptionExchange public optionExchange;
     IOptionRegistry public optionRegistry;
+    IBeyondPricer public beyondPricer;
 
     /// @notice Epoch Definition
     uint256 internal constant LIQUIDITY_LOCK_PERIOD = 6 days;
@@ -54,11 +58,11 @@ contract Vault is ERC4626 {
     /// @param _optionRegistry option registry contract
     /// @param _liquityPool liquidity pool contract
     constructor(
+        ERC20 _asset,
         IController _controller,
-        address _asset,
         address _optionExchange,
         address _optionRegistry,
-        address _liquityPool) 
+        address _liquityPool)
         ERC4626(ERC20(_asset), "HOMM Pool Token", "HOMM") 
         {
         // set fund operator
@@ -163,13 +167,18 @@ contract Vault is ERC4626 {
     }
 
     /**
-     * @notice complete withdrawal from Rysk liquidity pool using existing reciept
+     * @notice complete withdrawal from Rysk liquidity pool using existing withdrawal reciept
+     * returns the withdrawalAmount (USDC received) and withdrawalReceipt
      */
-    function completeWithdraw() public returns (uint256) {
+    function completeWithdraw() public returns (
+        uint256 withdrawalAmount, 
+        uint256 withdrawalShares, 
+        IAccounting.WithdrawalReceipt memory withdrawalReceipt) 
+        {
         if (msg.sender != fundOperator) revert OnlyFundOperator();
 
-        // withdraw liquidity from liquidity pool
-        return ILiquidityPool(liquidityPool).completeWithdraw();
+        // complete withdraw liquidity from liquidity pool
+        ILiquidityPool(liquidityPool).completeWithdraw();
     }
 
     /// @notice OptionExchange Functions ////////////////////////
@@ -230,11 +239,25 @@ contract Vault is ERC4626 {
     /**
      * @notice redeem option series on Rysk
      * @param _series the address of the option token to be burnt and redeemed
+     * @return amount of underlying asset amount returned
      */
     function redeemOptionTokens(address _series) public returns (uint256) {
         if (msg.sender != fundOperator) revert OnlyFundOperator();
 
         // redeem option tokens
         return IOptionRegistry(optionRegistry).redeem(_series);
+    }
+
+    /// @notice BeyondPricer ///////////////////////////////////
+
+    function quoteOptionPrice(
+        Types.OptionSeries memory _optionSeries,
+        uint256 _amount,
+        bool _isBuy,
+        int256 _netDhvExposure
+    ) public returns (uint256 totalPremium, int256 totalDelta, uint256 totalFees) {
+        if (msg.sender != fundOperator) revert OnlyFundOperator();
+        // get option price from BeyondPricer
+        return IBeyondPricer(beyondPricer).quoteOptionPrice(_optionSeries, _amount, _isBuy, _netDhvExposure);
     }
 }
