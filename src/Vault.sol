@@ -52,8 +52,8 @@ contract Vault is ERC4626 {
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @notice constructor parameters | solmate ERC4626 implementation
-    /// @param _controller controller contract we need to call setOperator on to approve use of OptionExchange
     /// @param _asset underlying vault asset (USDC)
+    /// @param _controller controller contract we need to call setOperator on to approve use of OptionExchange
     /// @param _optionExchange option exchange contract
     /// @param _optionRegistry option registry contract
     /// @param _liquityPool liquidity pool contract
@@ -63,7 +63,7 @@ contract Vault is ERC4626 {
         address _optionExchange,
         address _optionRegistry,
         address _liquityPool)
-        ERC4626(_asset, "HOMM Vault", "HOMM") 
+        ERC4626(_asset, "HOMM Vault", "HOMM")
         {
         // set fund operator
         fundOperator = msg.sender;
@@ -253,11 +253,11 @@ contract Vault is ERC4626 {
     function quoteOptionPrice(
         Types.OptionSeries memory _optionSeries,
         uint256 _amount,
-        bool _isBuy,
+        bool _isSell,
         int256 _netDhvExposure
     ) public returns (uint256 totalPremium, int256 totalDelta, uint256 totalFees) {
         if (msg.sender != fundOperator) revert OnlyFundOperator();
         // get option price from BeyondPricer
-        return IBeyondPricer(beyondPricer).quoteOptionPrice(_optionSeries, _amount, _isBuy, _netDhvExposure);
+        return IBeyondPricer(beyondPricer).quoteOptionPrice(_optionSeries, _amount, _isSell, _netDhvExposure);
     }
 }

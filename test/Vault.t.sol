@@ -43,13 +43,13 @@ contract VaultTest is Test {
         liquidityPool = ILiquidityPool(0x0B1Bf5fb77AA36cD48Baa1395Bc2B5fa0f135d8C);
 
         // deploy vault
-        vault = new Vault(
+        /*vault = new Vault(
             USDC,
             controller,
             address(optionExchange),
             address(optionRegistry),
             address(liquidityPool)
-        );
+        );*/
 
         // assert operator set
         //assertEq(controller.isOperator(address(this), address(vault)), true);

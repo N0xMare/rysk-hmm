@@ -4,13 +4,13 @@ import { ERC20 } from "solmate/tokens/ERC20.sol";
 
 contract MockERC20 is ERC20 {
 
-    constructor() ERC20("Mock Token", "MOCK", 18) {}
+    constructor() ERC20("ERC20Mock", "E20M", 18) {}
 
-    function mint(uint256 _amount) public {
-        super.mint(_amount);
+    function mint(address account, uint256 amount) external {
+        _mint(account, amount);
     }
 
-    function burn(uint256 _amount) public {
-        super.burn(_amount);
+    function burn(address account, uint256 amount) external {
+        _burn(account, amount);
     }
 }
