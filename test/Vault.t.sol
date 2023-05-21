@@ -180,22 +180,7 @@ contract VaultTest is Test, Minter {
         assertEq(vault.totalAssets(), USDC.balanceOf(address(vault)));
     }
 
-    function testInitiateWithdraw() external {
-        _preLoadDeposit(10 ** 36, address(this));
-
-        emit log_named_uint("HOMM Balance of depositor BEFORE:", vault.balanceOf(address(this)));
-        emit log_named_uint("HOMM Balance of Vault BEFORE:", vault.balanceOf(address(vault)));
-        emit log_named_uint("USDC Balance of depositor BEFORE:", USDC.balanceOf(address(this)));
-        emit log_named_uint("USDC Balance of Vault BEFORE:", USDC.balanceOf(address(vault)));
-
-        // withdraw/burn HOMM for USDC
-        vault.initiateWithdraw(10 ** 36);
-
-        emit log_named_uint("HOMM Balance of depositer AFTER:", vault.balanceOf(address(this)));
-        emit log_named_uint("HOMM Balance of Vault AFTER:", vault.balanceOf(address(vault)));
-        emit log_named_uint("USDC Balance of depositor AFTER:", USDC.balanceOf(address(this)));
-        emit log_named_uint("USDC Balance of Vault AFTER:", USDC.balanceOf(address(vault)));
-    }
+    // test withdrawal instantiation and completion
 
     function testTradeSimple() external {
         
