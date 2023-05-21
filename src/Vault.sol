@@ -33,6 +33,10 @@ contract Vault is ERC4626 {
     /*                        STORAGE                             */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
+    /// @notice reserves
+    uint256 public usdcReserves;
+    uint256 public wethReserves;
+
     /// @notice operator
     address public fundOperator;
 
@@ -116,7 +120,6 @@ contract Vault is ERC4626 {
      */
     function redeem(uint256 shares, address receiver, address owner) public override returns (uint256 assets) {
         if (this.isLocked()) revert LiquidityLocked();
-        //if () revert OperatorActive();
         // burn
         super.redeem(shares, receiver, owner);
     }
@@ -146,7 +149,7 @@ contract Vault is ERC4626 {
 
     /**
      * @notice deposit liquidity into Rysk liquidity pool
-     * @param _amount amount of liquidity to deposit into Rysk Liq Pool
+     * @param _amount amount of liquidity to deposit into Rysk Liq Pool (DHV)
      */
     function depositLiquidity(uint256 _amount) public returns (bool) {
         if (msg.sender != fundOperator) revert OnlyFundOperator();
