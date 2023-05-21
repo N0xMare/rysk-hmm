@@ -13,13 +13,11 @@ import { IBeyondPricer } from "../src/interfaces/IBeyondPricer.sol";
 import { Types } from "../src/libraries/Types.sol";
 
 
-contract DeployAMM is Script {
-    string RPC_URL;
-
+contract DeployHOMM is Script {
     /// Deploy v1
     function run() external {
         uint256 deployerPrivateKey = vm.envUint("DEPLOYER_KEY");
-        string rpc = vm.envString("ARBI_GOERLI_RPC_URL");
+        string memory rpc = vm.envString("ARBI_GOERLI_RPC_URL");
 
         vm.createSelectFork(rpc);
         vm.startBroadcast(deployerPrivateKey);
