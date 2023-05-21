@@ -63,7 +63,7 @@ contract Vault is ERC4626 {
         address _optionExchange,
         address _optionRegistry,
         address _liquityPool)
-        ERC4626(_asset, "HOMM Pool Token", "HOMM") 
+        ERC4626(_asset, "HOMM Vault", "HOMM") 
         {
         // set fund operator
         fundOperator = msg.sender;
