@@ -8,5 +8,5 @@ interface IBeyondPricer {
 		uint256 _amount,
 		bool isSell,
 		int256 netDhvExposure
-	) external returns (uint256 totalPremium, int256 totalDelta, uint256 totalFees);
+	) external view returns (uint256 totalPremium, int256 totalDelta, uint256 totalFees);
 }

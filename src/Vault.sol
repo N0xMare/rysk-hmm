@@ -258,7 +258,7 @@ contract Vault is ERC4626 {
         uint256 _amount,
         bool _isSell,
         int256 _netDhvExposure
-    ) public returns (uint256 totalPremium, int256 totalDelta, uint256 totalFees) {
+    ) external view returns (uint256 totalPremium, int256 totalDelta, uint256 totalFees) {
         if (msg.sender != fundOperator) revert OnlyFundOperator();
         // get option price from BeyondPricer
         return IBeyondPricer(beyondPricer).quoteOptionPrice(_optionSeries, _amount, _isSell, _netDhvExposure);
