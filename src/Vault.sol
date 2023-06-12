@@ -6,7 +6,7 @@ import { ERC20 } from "solmate/tokens/ERC20.sol";
 import { SafeTransferLib } from "solmate/utils/SafeTransferLib.sol";
 import { FixedPointMathLib } from "solmate/utils/FixedPointMathLib.sol";
 
-/// @notice rysk shtuff
+/// @notice rysk stuff
 import { ILiquidityPool } from "./interfaces/ILiquidityPool.sol";
 import { IOptionExchange } from "./interfaces/IOptionExchange.sol";
 import { IOptionRegistry } from "./interfaces/IOptionRegistry.sol";
@@ -14,12 +14,28 @@ import { IAccounting } from "./interfaces/IAccounting.sol";
 import { IController } from "./interfaces/IGammaInterface.sol";
 import { IBeyondPricer } from "./interfaces/IBeyondPricer.sol";
 import { Types } from "./libraries/Types.sol";
+import { CombinedActions } from "./libraries/CombinedActions.sol";
+import { RyskActions } from "./libraries/RyskActions.sol";
 
-/// @notice High Order Market Making Vault (HOMM Vault)
+/// @notice Tokenized Vault for Rysk Options Market, Wheel Trading Strategy
 contract Vault is ERC4626 {
 
     using SafeTransferLib for ERC20;
     using FixedPointMathLib for uint256;
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                        EVENTS                              */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    /// @notice emitted when execute is called
+    // foreach call to execute there is a nonce, `operateCallNonce`
+    // foreach operation within the operation procedure struct there is a nonce, `operationNonce`
+    event Execute(
+        uint256 indexed operateCallNonce, 
+        uint256 indexed operationNonce, 
+        CombinedActions.ActionArgs action, 
+        CombinedActions.OperationType operationType
+    );
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                        ERRORS                              */
@@ -35,10 +51,14 @@ contract Vault is ERC4626 {
 
     /// @notice reserves
     uint256 public usdcReserves;
-    uint256 public wethReserves;
 
     /// @notice operator
     address public fundOperator;
+
+    /// @notice operate() nonce
+    uint256 public operateCallNonce;
+    /// @notice 
+    uint256 public operationNonce;
 
     /// @notice strategy contracts
     ILiquidityPool public liquidityPool;
@@ -67,7 +87,7 @@ contract Vault is ERC4626 {
         address _optionExchange,
         address _optionRegistry,
         address _liquityPool)
-        ERC4626(_asset, "HOMM Vault", "HOMM")
+        ERC4626(_asset, "Rysk USDC Vault", "ryskUSDC")
         {
         // set fund operator
         fundOperator = msg.sender;
@@ -91,7 +111,9 @@ contract Vault is ERC4626 {
     function deposit(uint256 assets, address receiver) public override returns (uint256 shares) {
         if (this.isLocked()) revert LiquidityLocked();
         // deposit
-        super.deposit(assets, receiver);
+        shares = super.deposit(assets, receiver);
+        // update reserves
+        usdcReserves += assets;
     }
 
     /**
@@ -100,7 +122,9 @@ contract Vault is ERC4626 {
     function mint(uint256 shares, address receiver) public override returns (uint256 assets) {
         if (this.isLocked()) revert LiquidityLocked();
         // mint
-        super.mint(shares, receiver);
+        assets = super.mint(shares, receiver);
+        // update reserves
+        usdcReserves += assets;
     }
 
     /**
@@ -112,7 +136,9 @@ contract Vault is ERC4626 {
     function withdraw(uint256 assets, address receiver, address owner) public override returns (uint256 shares) {
         if (this.isLocked()) revert LiquidityLocked();
         // withdraw
-        super.withdraw(assets, receiver, owner);
+        shares = super.withdraw(assets, receiver, owner);
+        // update reserves
+        usdcReserves -= assets;
     }
 
     /**
@@ -121,7 +147,9 @@ contract Vault is ERC4626 {
     function redeem(uint256 shares, address receiver, address owner) public override returns (uint256 assets) {
         if (this.isLocked()) revert LiquidityLocked();
         // burn
-        super.redeem(shares, receiver, owner);
+        assets = super.redeem(shares, receiver, owner);
+        // update reserves
+        usdcReserves -= assets;
     }
 
     /**
@@ -145,96 +173,51 @@ contract Vault is ERC4626 {
     /*                  FUND OPERATOR FUNCTIONS                   */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @notice Liquidity Pool Functions ///////////////////////////
-
-    /**
-     * @notice deposit liquidity into Rysk liquidity pool
-     * @param _amount amount of liquidity to deposit into Rysk Liq Pool (DHV)
-     */
-    function depositLiquidity(uint256 _amount) public returns (bool) {
-        if (msg.sender != fundOperator) revert OnlyFundOperator();
-
-        // deposit liquidity to liquidity pool
-        return ILiquidityPool(liquidityPool).deposit(_amount);
-    }
-
-    /** 
-     * @notice generate Rysk withdrawal reciept for share amount operator input
-     * @param _shares amount of shares to withdraw from Rysk Liq Pool
-     */
-    function initiateWithdraw(uint256 _shares) public {
-        if (msg.sender != fundOperator) revert OnlyFundOperator();
-
-        // initiate withdraw liquidity from liquidity pool
-        ILiquidityPool(liquidityPool).initiateWithdraw(_shares);
-    }
-
-    /**
-     * @notice complete withdrawal from Rysk liquidity pool using existing withdrawal reciept
-     * returns the withdrawalAmount (USDC received) and withdrawalReceipt
-     */
-    function completeWithdraw() public returns (
-        uint256 withdrawalAmount, 
-        uint256 withdrawalShares, 
-        IAccounting.WithdrawalReceipt memory withdrawalReceipt) 
-        {
-        if (msg.sender != fundOperator) revert OnlyFundOperator();
-
-        // complete withdraw liquidity from liquidity pool
-        ILiquidityPool(liquidityPool).completeWithdraw();
-    }
-
     /// @notice OptionExchange Functions ////////////////////////
 
     /** Struct specification for OperateProcedure
-
-    struct OptionSeries {
-        uint64 expiration;
-        uint128 strike;
-        bool isPut;
-        address underlying;
-        address strikeAsset;
-        address collateral;
-	}
-
-    enum ActionType {
-        Issue,
-        BuyOption,
-        SellOption,
-        CloseOption
+    ----------------------------------------------------------------
+    struct OptionSeries {                  |    enum ActionType {
+        uint64 expiration;                 |        Issue,
+        uint128 strike;                    |        BuyOption,
+        bool isPut;                        |        SellOption,
+        address underlying;                |        CloseOption
+        address strikeAsset;               |    }
+        address collateral;                |
+	}                                      |
+    ----------------------------------------------------------------
+    struct ActionArgs {                    |    enum OperationType {
+        ActionType actionType;             |        OPYN,
+        address secondAddress;             |        RYSK
+        address asset;                     |    }
+        uint256 vaultId;                   |
+        uint256 amount;                    |
+        Types.OptionSeries optionSeries;   |
+        uint256 acceptablePremium;         |
+        bytes data;                        |
     }
-
-    struct ActionArgs {
-        ActionType actionType;
-        address secondAddress;
-        address asset;
-        uint256 vaultId;
-        uint256 amount;
-        Types.OptionSeries optionSeries;
-        uint256 acceptablePremium;
-        bytes data;
-    }
-
-    enum OperationType {
-        OPYN,
-        RYSK
-    }
-
+    ----------------------------------------------------------------
     struct OperationProcedures {
         CombinedActions.OperationType operation;
         CombinedActions.ActionArgs[] operationQueue;
     }
     */
-    
     /**
-     * @notice trade options on Rysk
-     * @param _operateProcedures array of operation procedures to execute on Rysk
+     * @notice execute actions on Rysk
+     * @param _operateProcedures array of operations to execute on Rysk
      */
-    function trade(IOptionExchange.OperationProcedures[] memory _operateProcedures) public {
+    function execute(IOptionExchange.OperationProcedures[] memory _operateProcedures) public {
         if (msg.sender != fundOperator) revert OnlyFundOperator();
 
-        // make trade with capital within this contract
+        // execute action with capital within this contract
         IOptionExchange(optionExchange).operate(_operateProcedures);
+        operateCallNonce++;
+        for(uint16 i = 0; i < _operateProcedures.length; i++) {
+            for (uint16 j = 0; j < _operateProcedures[i].operationQueue.length; j++) {
+                operationNonce++;
+                emit Execute(operateCallNonce, operationNonce, _operateProcedures[i].operationQueue[j], _operateProcedures[i].operation);
+            }
+        }
     }
 
     /// @notice OptionRegistry ///////////////////////////////////
@@ -246,7 +229,6 @@ contract Vault is ERC4626 {
      */
     function redeemOptionTokens(address _series) public returns (uint256) {
         if (msg.sender != fundOperator) revert OnlyFundOperator();
-
         // redeem option tokens
         return IOptionRegistry(optionRegistry).redeem(_series);
     }
