@@ -36,9 +36,13 @@ lib
 ├─ forge-std — https://github.com/foundry-rs/forge-std
 ├─ solmate — https://github.com/transmissions11/solmate
 scripts
-├─ Deploy.s.sol — Example Contract Deployment Script
+├─ Deploy.s.sol — Simple Vault Contract Deployment Script
 src
-├─ Greeter — Example Contract
+├─ Interfaces - Rysk Protocol interfaces for use in the vault contract
+├─ Libraries — Rysk Protocol libraries for use in the vault contract
+├─ Vault — ERC4626 Vault Contract operated by the Autonomous Service
 test
-└─ Greeter.t — Example Contract Tests
+├─ Mocks - Mocks for testing the vault contract
+├─ Minter - Minter Contract for testing the vault contract
+└─ Vault.t — Vault Contract Tests
 ```
