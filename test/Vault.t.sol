@@ -321,9 +321,9 @@ contract VaultTest is Test, Minter {
     // Mint HOMM using USDC
     function testMint() external {
         emit log_named_uint("HOMM Balance of depositor BEFORE", vault.balanceOf(address(this)));
-        emit log_named_uint("USDC Balance of depositor BEFORE", USDC.balanceOf(address(this)));
+        emit log_named_uint("USDC Balance of depositor BEFORE", underlying.balanceOf(address(this)));
         emit log_named_uint("HOMM Balance of Vault BEFORE", vault.balanceOf(address(vault)));
-        emit log_named_uint("USDC Balance of Vault BEFORE", USDC.balanceOf(address(vault)));
+        emit log_named_uint("USDC Balance of Vault BEFORE", underlying.balanceOf(address(vault)));
         emit log_named_uint("Total Assets of Vault BEFORE", vault.totalAssets());
 
         // mint vault shares
@@ -331,9 +331,9 @@ contract VaultTest is Test, Minter {
 
         emit log_named_uint("Deposit Asset Output AFTER:", assetAmount);
         emit log_named_uint("HOMM Balance of depositer AFTER", vault.balanceOf(address(this)));
-        emit log_named_uint("USDC Balance of depositor AFTER", USDC.balanceOf(address(this)));
+        emit log_named_uint("USDC Balance of depositor AFTER", underlying.balanceOf(address(this)));
         emit log_named_uint("HOMM Balance of Vault AFTER", vault.balanceOf(address(vault)));
-        emit log_named_uint("USDC Balance of Vault AFTER", USDC.balanceOf(address(vault)));
+        emit log_named_uint("USDC Balance of Vault AFTER", underlying.balanceOf(address(vault)));
         emit log_named_uint("Total Assets of Vault AFTER", vault.totalAssets());
 
         assertEq(vault.totalAssets(), 10 ** 36);
@@ -345,11 +345,11 @@ contract VaultTest is Test, Minter {
     function testWithdraw() external {
         _preLoadDeposit(10 ** 36, address(this));
 
-        uint256 sum = vault.balanceOf(address(this)) + USDC.balanceOf(address(this)); 
+        uint256 sum = vault.balanceOf(address(this)) + underlying.balanceOf(address(this)); 
         emit log_named_uint("HOMM Balance of depositor BEFORE:", vault.balanceOf(address(this)));
         emit log_named_uint("HOMM Balance of Vault BEFORE:", vault.balanceOf(address(vault)));
-        emit log_named_uint("USDC Balance of depositor BEFORE:", USDC.balanceOf(address(this)));
-        emit log_named_uint("USDC Balance of Vault BEFORE:", USDC.balanceOf(address(vault)));
+        emit log_named_uint("USDC Balance of depositor BEFORE:", underlying.balanceOf(address(this)));
+        emit log_named_uint("USDC Balance of Vault BEFORE:", underlying.balanceOf(address(vault)));
 
         // withdraw/burn HOMM for USDC
         uint256 shareAmount = vault.withdraw(10 ** 36, address(this), address(this));
@@ -357,22 +357,22 @@ contract VaultTest is Test, Minter {
         emit log_named_uint("Withdraw Share Output AFTER:", shareAmount);
         emit log_named_uint("HOMM Balance of depositer AFTER:", vault.balanceOf(address(this)));
         emit log_named_uint("HOMM Balance of Vault AFTER:", vault.balanceOf(address(vault)));
-        emit log_named_uint("USDC Balance of depositor AFTER:", USDC.balanceOf(address(this)));
-        emit log_named_uint("USDC Balance of Vault AFTER:", USDC.balanceOf(address(vault)));
+        emit log_named_uint("USDC Balance of depositor AFTER:", underlying.balanceOf(address(this)));
+        emit log_named_uint("USDC Balance of Vault AFTER:", underlying.balanceOf(address(vault)));
 
         assertEq(shareAmount, 0);
-        assertEq(USDC.balanceOf(address(this)), sum);
+        assertEq(underlying.balanceOf(address(this)), sum);
         assertEq(vault.totalAssets(), 0);
     }
 
     // Redeem HOMM using USDC
     function testRedeem() external {
         _preLoadMint(10 ** 36, address(this));
-        uint256 sum = vault.balanceOf(address(this)) + USDC.balanceOf(address(this));
+        uint256 sum = vault.balanceOf(address(this)) + underlying.balanceOf(address(this));
         emit log_named_uint("HOMM Balance of depositor BEFORE:", vault.balanceOf(address(this)));
         emit log_named_uint("HOMM Balance of Vault BEFORE:", vault.balanceOf(address(vault)));
-        emit log_named_uint("USDC Balance of depositor BEFORE:", USDC.balanceOf(address(this)));
-        emit log_named_uint("USDC Balance of Vault BEFORE:", USDC.balanceOf(address(vault)));
+        emit log_named_uint("USDC Balance of depositor BEFORE:", underlying.balanceOf(address(this)));
+        emit log_named_uint("USDC Balance of Vault BEFORE:", underlying.balanceOf(address(vault)));
 
         // withdraw/burn HOMM for USDC
         uint256 assetAmount = vault.redeem(10 ** 36, address(this), address(this));
@@ -380,10 +380,10 @@ contract VaultTest is Test, Minter {
         emit log_named_uint("Withdraw Share Output AFTER:", assetAmount);
         emit log_named_uint("HOMM Balance of depositer AFTER:", vault.balanceOf(address(this)));
         emit log_named_uint("HOMM Balance of Vault AFTER:", vault.balanceOf(address(vault)));
-        emit log_named_uint("USDC Balance of depositor AFTER:", USDC.balanceOf(address(this)));
-        emit log_named_uint("USDC Balance of Vault AFTER:", USDC.balanceOf(address(vault)));
+        emit log_named_uint("USDC Balance of depositor AFTER:", underlying.balanceOf(address(this)));
+        emit log_named_uint("USDC Balance of Vault AFTER:", underlying.balanceOf(address(vault)));
 
-        assertEq(sum, USDC.balanceOf(address(this)));
+        assertEq(sum, underlying.balanceOf(address(this)));
         assertEq(vault.totalAssets(), 0);
     }
 
