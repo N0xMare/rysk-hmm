@@ -10,5 +10,16 @@ interface IOptionExchange {
         CombinedActions.ActionArgs[] operationQueue;
     }
 
+    function checkHash(
+		Types.OptionSeries memory optionSeries,
+		uint128 strikeDecimalConverted,
+		bool isSell
+	) external returns (bytes32 oHash);
+
+    function getOptionDetails(
+		address seriesAddress,
+		Types.OptionSeries memory optionSeries
+	) external view returns (address, Types.OptionSeries memory, uint128);
+
     function operate(OperationProcedures[] memory _operationProcedures) external;
 }

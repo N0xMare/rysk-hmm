@@ -24,11 +24,12 @@ contract DeployHOMM is Script {
 
         // Deploy Vault
         Vault vault = new Vault(
-            ERC20(0x408c5755b5c7a0a28D851558eA3636CfC5b5b19d),       // USDC
-            IController(0x8e3e84E7F207b0b66BD8D902C293cF269C67a168), // Controller
-            address(0xb672fE86693bF6f3b034730f5d2C77C8844d6b45),     // OptionExchange
-            address(0x4E89cc3215AF050Ceb63Ca62470eeC7C1A66F737),     // OptionRegistry
-            address(0x0B1Bf5fb77AA36cD48Baa1395Bc2B5fa0f135d8C)      // LiquidityPool
+            ERC20(0x408c5755b5c7a0a28D851558eA3636CfC5b5b19d),    // USDC
+            address(0x8e3e84E7F207b0b66BD8D902C293cF269C67a168),  // Controller
+            address(0xb672fE86693bF6f3b034730f5d2C77C8844d6b45),  // OptionExchange
+            address(0x4E89cc3215AF050Ceb63Ca62470eeC7C1A66F737),  // OptionRegistry
+            address(0x0B1Bf5fb77AA36cD48Baa1395Bc2B5fa0f135d8C),  // LiquidityPool
+            address(0xc939df369C0Fc240C975A6dEEEE77d87bCFaC259)   // beyondPricer
         );
 
         vm.stopBroadcast();

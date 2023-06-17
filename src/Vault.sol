@@ -15,7 +15,6 @@ import { IOptionRegistry } from "./interfaces/IOptionRegistry.sol";
 import { IAccounting } from "./interfaces/IAccounting.sol";
 import { IController } from "./interfaces/IGammaInterface.sol";
 import { IBeyondPricer } from "./interfaces/IBeyondPricer.sol";
-import { IAlphaPortfolioValuesFeed } from "./interfaces/IAlphaPortfolioValuesFeed.sol";
 // libraries
 import { Types } from "./libraries/Types.sol";
 import { CombinedActions } from "./libraries/CombinedActions.sol";
@@ -38,10 +37,8 @@ contract Vault is ERC4626 {
     // foreach execute() call there is a nonce, `operateCallNonce`
     // foreach operation within the operation procedure struct there is a nonce, `operationNonce`
     event Execute(
-        uint256 indexed operateCallNonce, 
-        uint256 indexed operationNonce, 
-        CombinedActions.ActionArgs action, 
-        CombinedActions.OperationType operationType
+        uint256 indexed executionNonce, 
+        IOptionExchange.OperationProcedures[] operationProcedures
     );
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -76,7 +73,7 @@ contract Vault is ERC4626 {
     // kinda like a linked list, but not really
     mapping(address => Withdrawal) public pendingWithdrawals;
     /// @notice pending withdrawals size
-    address public listSize;
+    uint256 public listSize;
     /// @notice pending withdrawals list head
     address constant head = address(1);
     /// @notice balances mapping
@@ -86,7 +83,7 @@ contract Vault is ERC4626 {
     address public fundOperator;
 
     /// @notice operate() nonce
-    uint256 public operateCallNonce;
+    uint256 public executionNonce;
     /// @notice operation nonce
     uint8 public operationNonce;
 
@@ -99,8 +96,6 @@ contract Vault is ERC4626 {
     address public liquidityPool;
     // Rysk options pricing
     address public beyondPricer;
-    // Rysk portfolio storage and calculations
-    address public alphaPortfolioValuesFeed;
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                     CONSTRUCTOR                            */
@@ -113,15 +108,13 @@ contract Vault is ERC4626 {
     /// @param _optionRegistry option registry contract
     /// @param _liquidityPool liquidity pool contract
     /// @param _beyondPricer beyond pricer contract
-    /// @param _alphaPortfolioValuesFeed alpha portfolio values feed contract
     constructor(
         ERC20 _asset,
         address _controller,
         address _optionExchange,
         address _optionRegistry,
         address _liquidityPool,
-        address _beyondPricer,
-        address _alphaPortfolioValuesFeed
+        address _beyondPricer
         )
         ERC4626(_asset, "Rysk USDC Vault", "ryskUSDC")
         {
@@ -131,7 +124,6 @@ contract Vault is ERC4626 {
         optionRegistry = _optionRegistry;
         liquidityPool = _liquidityPool;
         beyondPricer = _beyondPricer;
-        alphaPortfolioValuesFeed = _alphaPortfolioValuesFeed;
         // set optionExchange as operator in controller
         IController(_controller).setOperator(address(optionExchange), true);
         // initialize pending withdrawals
@@ -255,16 +247,23 @@ contract Vault is ERC4626 {
 
     /**
      * @notice get list of withdrawals
-     * @return withdrawals list of withdrawal structs
+     * @return receivers array of receiver addresses with pending withdrawals
+     * @return withdrawals array of Withdrawal structs for receivers with pending withdrawals
      */
-    function getWithdrawals() public view returns (Withdrawal[] memory) {
+    function getWithdrawals() public view returns (address[] memory receivers, Withdrawal[] memory withdrawals) {
+        // define withdrawals array
         Withdrawal[] memory withdrawals = new Withdrawal[](listSize);
+        // define receivers array
+        address[] memory receivers = new address[](listSize);
+        // set current to front address
         address current = pendingWithdrawals[head].next;
         for (uint256 i = 0; i < listSize; i++) {
-            withdrawals[i] = current;
+            // add current receiver and withdrawal to arrays
+            receivers[i] = current;
+            withdrawals[i] = pendingWithdrawals[current];
+            // update current to next receiver
             current = pendingWithdrawals[current].next;
         }
-        return withdrawals;
     }
 
     /**
@@ -278,7 +277,7 @@ contract Vault is ERC4626 {
     /*                  FUND OPERATOR FUNCTIONS                   */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @notice Fund Withdrawal Function //////////////////
+    /// @notice Fund Withdrawal Functions //////////////////
 
     /**
      * @notice complete pending withdrawal
@@ -298,11 +297,76 @@ contract Vault is ERC4626 {
         asset.safeTransfer(receiver, amount);
         // update reserves
         usdcReserves -= amount;
+        emit WithdrawalCompleted(receiver, amount);
     }
 
     /// @notice OptionExchange Functions ////////////////////////
 
-    /** Struct specification for OperateProcedure
+    /**
+     * @notice check operator's execute() params for each prodecure are valid
+     * @param procedure CombinedActions.OperationProcedures struct used in calls to execute()
+     * @return bool if the operation is valid
+     * NOTE: only for rysk actions as of now (WIP)
+     */
+    function checkProdecure(IOptionExchange.OperationProcedures memory procedure) internal view returns (bool) {
+        // OPYN
+        if (procedure.operation == CombinedActions.OperationType.OPYN) {
+            // currently no checks for opyn operations
+            return true;
+        }
+        // RYSK
+        else if (procedure.operation == CombinedActions.OperationType.RYSK) {
+            // iterate through each action (ActionArg) in the procedure
+            for(uint256 i = 0; i < procedure.operationQueue.length; i++) {
+                // load action args
+                CombinedActions.ActionArgs memory actionArgs = procedure.operationQueue[i];
+                // load option series
+                Types.OptionSeries memory optionSeries = procedure.operationQueue[i].optionSeries;
+                // check option series expiration is not more than 30 days in the future
+                if (optionSeries.expiration > block.timestamp + 30 days) {
+                    return false;
+                }
+                // ISSUE OPTION
+                if (actionArgs.actionType == 0) {
+                    // strike price needs to be 1e18
+                    // WIP
+                    return true;
+                }
+                // BUY OPTION
+                else if (actionArgs.actionType == 1) {
+                    // decimal convert strike price
+                    /*(address series, Types.OptionSeries memory convertSeries, uint128 strikePrice) =
+                        IOptionExchange(optionExchange).getOptionDetails(
+                            optionSeries,
+                        );
+
+                    IOptionExchange(optionExchange).checkHash(
+                        optionSeries,
+
+                    );*/
+                    // WIP
+                    return true;
+                }
+                // SELL OPTION
+                else if (actionArgs.actionType == 2) {
+                    // WIP
+                    return true;
+                }
+                // CLOSE OPTION
+                else if (actionArgs.actionType == 3) {
+                    // WIP
+                    return true;
+                }
+                // INVALID ACTION TYPE
+                else {
+                    return false;
+                }
+            }
+        }
+    }
+
+
+    /** Struct specification for OperationProcedures
     ----------------------------------------------------------------
     struct OptionSeries {                  |    enum ActionType {
         uint64 expiration;                 |        Issue,
@@ -325,8 +389,8 @@ contract Vault is ERC4626 {
     }
     ----------------------------------------------------------------
     struct OperationProcedures {
-        RyskActions.OperationType operation;
-        RyskActions.ActionArgs[] operationQueue;
+        CombinedActions.OperationType operation;
+        CombinedActions.ActionArgs[] operationQueue;
     }
     ----------------------------------------------------------------
     */
@@ -334,111 +398,21 @@ contract Vault is ERC4626 {
      * @notice execute actions on Rysk (WIP)
      * @param _operateProcedures array of operations to execute on RYSK/OPYN
      */
-    function execute(IOptionExchange.OperationProcedures[] memory _operateProcedures) public {
+    function execute(IOptionExchange.OperationProcedures[] memory _operateProcedures) external {
         if (msg.sender != fundOperator) revert OnlyFundOperator();
-        // iterate through _operateProcedures
+
+        // iterate through _operateProcedures to check validity
         for(uint8 i = 0; i < _operateProcedures.length; i++) {
-            // iterate through operationQueue
-            for (uint8 j = 0; j < _operateProcedures[i].operationQueue.length; j++) {
-                // OPYN
-                if (_operateProcedures[i].operation == CombinedActions.OperationType.OPYN) {
-                    // handle OPYN operations
-                    // currently no checks on this, will be implemented later
-                    IOptionExchange(optionExchange).operate(_operateProcedures);
-                }
-                // RYSK
-                else if (_operateProcedures[i].operation == CombinedActions.OperationType.RYSK) {
-
-                    // parse into RYSK ActionArgs
-                    RyskActions.ActionArgs memory ryskAction = CombinedActions._parseRyskArgs(_operateProcedures[i].operationQueue[j]);
-
-                    // ISSUE (0)
-                    if (ryskAction.actionType == RyskActions.ActionType.Issue) {
-                        // load option series
-                        Types.OptionSeries memory optionSeries = ryskAction.optionSeries;
-
-                        // check option series expiration is not more than 30 days in the future
-                        if (optionSeries.expiration > block.timestamp + 30 days) {
-                            revert InvalidOperation();
-                        }
-
-                        // more safety checks here (WIP)
-                        int256 netDhv = IAlphaPortfolioValuesFeed(alphaPortfolioValuesFeed).netDhvExposure(oHash);
-
-
-                        // measure slippage from beyondpricer, assert slippage tolerance
-                        (uint256 totalPremium, int256 totalDelta, uint256 totalFees) = 
-                            beyondPricer.quoteOptionPrice(
-                                ryskAction.optionSeries, 
-                                ryskAction.amount, 
-                                optionSeries.isPut,
-                                netDhv
-                            );
-
-                        // operate
-                        IOptionExchange(optionExchange).operate(_operateProcedures);
-                        emit Execute(operateCallNonce, operationNonce, _operateProcedures[i].operationQueue[j], _operateProcedures[i].operation);
-
-                        // decrease USDC reserves by amount used for issue, receive and track oToken issued by Rysk
-
-                        // update reserves
-                        usdcReserves -= ryskAction.amount;
-
-                        // update local oToken(s) state (WIP)
-
-                    // BUY OPTION (1)
-                    } else if (ryskAction.actionType == RyskActions.ActionType.BuyOption) {
-                        // lose USDC reserves, receive oToken from Rysk liquidity pool
-
-                        // check option series expiration is not more than 30 days in the future
-                        if (ryskAction.optionSeries.expiration > block.timestamp + 30 days) {
-                            revert InvalidOperation();
-                        }
-                        // more safety checks here (WIP)
-
-                        // operate
-                        IOptionExchange(optionExchange).operate(_operateProcedures);
-                        emit Execute(operateCallNonce, operationNonce, _operateProcedures[i].operationQueue[j], _operateProcedures[i].operation);
-
-                        // decrease USDC reserves by amount used for buy, receive and track oToken issued by Rysk
-
-                        // update reserves
-                        usdcReserves -= ryskAction.amount;
-
-                        // update local oToken(s) state (WIP)
-
-                    // SELL OPTION (2)
-                    } else if (ryskAction.actionType == RyskActions.ActionType.SellOption) {
-                        // receive USDC reserves (premium), lose oToken
-                        // assert acceptable premium/PnL
-
-                        IOptionExchange(optionExchange).operate(_operateProcedures);
-
-                        emit Execute(operateCallNonce, operationNonce, _operateProcedures[i].operationQueue[j], _operateProcedures[i].operation);
-
-                    // CLOSE OPTION (3)
-                    } else if (ryskAction.actionType == RyskActions.ActionType.CloseOption) {
-                        // receive USDC reserves (premium), lose oToken to Rysk liquidity pool
-                        // assert acceptable premium/PnL
-
-                        IOptionExchange(optionExchange).operate(_operateProcedures);
-
-                        emit Execute(operateCallNonce, operationNonce, _operateProcedures[i].operationQueue[j], _operateProcedures[i].operation);
-                    }
-                } else revert InvalidOperation();
-            }
+            // validate the vault operator is making valid operation(s)
+            bool output = checkProdecure(_operateProcedures[i]);
+            if (output == false) revert InvalidOperation();
         }
 
-        // execute action with capital within this contract
-        //IOptionExchange(optionExchange).operate(_operateProcedures);
-
-        /*operateCallNonce++;
-        for(uint8 i = 0; i < _operateProcedures.length; i++) {
-            for (uint8 j = 0; j < _operateProcedures[i].operationQueue.length; j++) {
-                operationNonce++;
-                emit Execute(operateCallNonce, operationNonce, _operateProcedures[i].operationQueue[j], _operateProcedures[i].operation);
-            }
-        }*/
+        // OptionExchange.operate()
+        IOptionExchange(optionExchange).operate(_operateProcedures);
+        // increment executionNonce
+        executionNonce++;
+        emit Execute(executionNonce, _operateProcedures);
     }
 
     /// @notice OptionRegistry ///////////////////////////////////

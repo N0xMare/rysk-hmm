@@ -12,6 +12,7 @@ import { IController } from "../src/interfaces/IGammaInterface.sol";
 import { ILiquidityPool } from "../src/interfaces/ILiquidityPool.sol";
 import { IOptionExchange } from "../src/interfaces/IOptionExchange.sol";
 import { IOptionRegistry } from "../src/interfaces/IOptionRegistry.sol";
+import { IBeyondPricer } from "../src/interfaces/IBeyondPricer.sol";
 
 import { Minter } from "./Minter.sol";
 import { MockERC20 } from "./Mocks/MockERC20.sol";
@@ -33,6 +34,7 @@ contract VaultTest is Test, Minter {
     IOptionExchange public optionExchange;
     IOptionRegistry public optionRegistry;
     ILiquidityPool public liquidityPool;
+    IBeyondPricer public beyondPricer;
     MockERC20 public underlying;
 
     // vault
@@ -44,14 +46,17 @@ contract VaultTest is Test, Minter {
         optionExchange = IOptionExchange(0xb672fE86693bF6f3b034730f5d2C77C8844d6b45);
         optionRegistry = IOptionRegistry(0x4E89cc3215AF050Ceb63Ca62470eeC7C1A66F737);
         liquidityPool = ILiquidityPool(0x0B1Bf5fb77AA36cD48Baa1395Bc2B5fa0f135d8C);
+        beyondPricer = IBeyondPricer(0xc939df369C0Fc240C975A6dEEEE77d87bCFaC259);
+
 
         // deploy vault
         vault = new Vault(
             underlying,
-            controller,
+            address(controller),
             address(optionExchange),
             address(optionRegistry),
-            address(liquidityPool)
+            address(liquidityPool),
+            address(beyondPricer)
         );
 
         vm.deal(address(this), 100 ether);
