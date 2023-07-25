@@ -6,6 +6,7 @@ import { ERC4626 } from "solmate/mixins/ERC4626.sol";
 import { ERC20 } from "solmate/tokens/ERC20.sol";
 import { SafeTransferLib } from "solmate/utils/SafeTransferLib.sol";
 import { FixedPointMathLib } from "solmate/utils/FixedPointMathLib.sol";
+import { ReentrancyGuard } from "solmate/utils/ReentrancyGuard.sol";
 
 /// @notice rysk
 // interfaces
@@ -21,8 +22,7 @@ import { CombinedActions } from "./libraries/CombinedActions.sol";
 import { RyskActions } from "./libraries/RyskActions.sol";
 
 /// @notice Tokenized Vault for Rysk Options Market, Wheel Trading Strategy
-contract Vault is ERC4626 {
-
+contract Vault is ERC4626, ReentrancyGuard {
     using SafeTransferLib for ERC20;
     using FixedPointMathLib for uint256;
 
@@ -58,16 +58,20 @@ contract Vault is ERC4626 {
     /*                        STORAGE                             */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
+    /// @notice Withdrawal struct
+    // amount to withdraw for receiver
+    // next receiver address
     struct Withdrawal {
-        uint256 amount;
+        uint256 shareAmount;
+        address owner;
         address next;
     }
 
     /// @notice reserves, USDC balance of this contract
     uint256 public usdcReserves;
     /// @notice active capital, USDC balance deployed in vault strategy managed by the operator
-    uint256 public activeCapital; 
-    // NOTE: PnL calc, is checking assets received back from trades with activeCapital amount we txs out of vault
+    uint256 public activeCapital;
+    // NOTE: PnL calc, is checking difference between assets received back from trades with activeCapital amount we txs out of vault
 
     /// @notice pending withdrawals map (receiver => Withdrawal(amount, next_receiver_addr))
     // kinda like a linked list, but not really
@@ -127,8 +131,7 @@ contract Vault is ERC4626 {
         // set optionExchange as operator in controller
         IController(_controller).setOperator(address(optionExchange), true);
         // initialize pending withdrawals
-        pendingWithdrawals[head].next = head;
-        pendingWithdrawals[head].amount = 0;
+        pendingWithdrawals[head] = Withdrawal({shareAmount: 0, owner: head, next: head});
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -141,7 +144,7 @@ contract Vault is ERC4626 {
      * @param receiver address to send "shares" to
      * @return shares amount of Vault shares minted
      */
-    function deposit(uint256 assets, address receiver) public override returns (uint256 shares) {
+    function deposit(uint256 assets, address receiver) public override nonReentrant returns (uint256 shares) {
         // deposit
         shares = super.deposit(assets, receiver);
         // update reserves
@@ -154,7 +157,7 @@ contract Vault is ERC4626 {
      * @param receiver address to send "shares" to
      * @return assets amount of "assets" (USDC) deposited
      */
-    function mint(uint256 shares, address receiver) public override returns (uint256 assets) {
+    function mint(uint256 shares, address receiver) public override nonReentrant returns (uint256 assets) {
         // mint
         assets = super.mint(shares, receiver);
         // update reserves
@@ -167,21 +170,22 @@ contract Vault is ERC4626 {
      * @param assets amount of "asset" (USDC) to withdraw
      * @param receiver address to send "asset" (USDC) to
      */
-    function initiateWithdraw(uint256 assets, address receiver) public {
-        if (assets == 0) {
+    function initiateWithdraw(uint256 assets, address receiver) public nonReentrant {
+        uint256 sharesWithdrawalAmount = convertToShares(assets);
+        if (sharesWithdrawalAmount == 0) {
             revert InsufficientAmount();
         }
-        // total number of assets from msg.sender's share balance
-        uint256 currentAssetsFromShares = convertToAssets(this.balanceOf(msg.sender));
+        // current share balance of msg.sender
+        uint256 currentShares = this.balanceOf(msg.sender);
         // total number of assets from msg.sender's receiver pending withdrawals
-        uint256 currentWithdrawAmount = pendingWithdrawals[receiver].amount;
+        uint256 currentWithdrawAmount = pendingWithdrawals[receiver].shareAmount;
 
         // verify msg.sender has enough shares/assets for withdrawal
         // user cannot withdraw more than their total balance
-        if (currentAssetsFromShares < assets) {
+        if (currentShares < sharesWithdrawalAmount) {
             revert WithdrawalAmountErr();
         }
-        if (currentAssetsFromShares < currentWithdrawAmount + assets) {
+        if (currentShares < currentWithdrawAmount + sharesWithdrawalAmount) {
             revert PendingWithdrawalAmountErr();
         }
         // assert reciever's next address is the zero address, 1 pending withdrawal per receiver
@@ -194,8 +198,9 @@ contract Vault is ERC4626 {
         // can either be the head address `address(1)` if the list is empty, receiving its first element, or 
         // if the list is not empty the next address of the current head
         pendingWithdrawals[receiver] = Withdrawal({
-            next: pendingWithdrawals[head].next,
-            amount: assets
+            shareAmount: currentWithdrawAmount + sharesWithdrawalAmount,
+            owner: msg.sender,
+            next: pendingWithdrawals[head].next
         });
         // update head to point to the new withdrawal receiver address
         pendingWithdrawals[head].next = receiver;
@@ -208,22 +213,20 @@ contract Vault is ERC4626 {
      * @param shares amount of "shares" to burn
      * @param receiver address to send "assets" (USDC) to
      */
-    function initiateRedeem(uint256 shares, address receiver) public {
+    function initiateRedeem(uint256 shares, address receiver) public nonReentrant {
         if (shares == 0) {
             revert InsufficientAmount();
         }
-        // total number of assets from msg.sender's share balance
-        uint256 currentAssetsFromShares = convertToAssets(this.balanceOf(msg.sender));
         // assets amount to withdraw
-        uint256 assets = convertToAssets(shares);
+        uint256 currentShares = this.balanceOf(msg.sender);
         // total number of assets from msg.sender's pending withdrawals
-        uint256 currentWithdrawAmount = pendingWithdrawals[receiver].amount;
+        uint256 currentWithdrawAmount = pendingWithdrawals[receiver].shareAmount;
 
         // user cannot withdraw more than their total balance
-        if (currentAssetsFromShares < assets) {
+        if (currentShares < shares) {
             revert WithdrawalAmountErr();
         }
-        if (currentAssetsFromShares < currentWithdrawAmount + assets) {
+        if (currentShares < currentWithdrawAmount + shares) {
             revert PendingWithdrawalAmountErr();
         }
         // assert reciever's next address is the zero address, 1 pending withdrawal per receiver
@@ -236,8 +239,9 @@ contract Vault is ERC4626 {
         // can either be the head address `address(1)` if the list is empty, receiving its first element, or
         // if the list is not empty the next address of the current head
         pendingWithdrawals[receiver] = Withdrawal({
-            next: pendingWithdrawals[head].next,
-            amount: assets
+            shareAmount: currentShares + shares,
+            owner: msg.sender,
+            next: pendingWithdrawals[head].next
         });
         // update head to point to the new withdrawal receiver address
         pendingWithdrawals[head].next = receiver;
@@ -252,9 +256,9 @@ contract Vault is ERC4626 {
      */
     function getWithdrawals() public view returns (address[] memory receivers, Withdrawal[] memory withdrawals) {
         // define withdrawals array
-        Withdrawal[] memory withdrawals = new Withdrawal[](listSize);
+        withdrawals = new Withdrawal[](listSize);
         // define receivers array
-        address[] memory receivers = new address[](listSize);
+        receivers = new address[](listSize);
         // set current to front address
         address current = pendingWithdrawals[head].next;
         for (uint256 i = 0; i < listSize; i++) {
@@ -277,27 +281,40 @@ contract Vault is ERC4626 {
     /*                  FUND OPERATOR FUNCTIONS                   */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
+    /// @notice Set Fund Operator
+    /// @param _fundOperator address of the fund operator
+    function setFundOperator(address _fundOperator) external {
+        if (msg.sender != fundOperator) revert OnlyFundOperator();
+        fundOperator = _fundOperator;
+    }
+
     /// @notice Fund Withdrawal Functions //////////////////
 
     /**
      * @notice complete pending withdrawal
      */
-    function completeWithdrawal() external {
+    function completeWithdrawal() external nonReentrant {
         if (msg.sender != fundOperator) revert OnlyFundOperator();
         if (listSize == 0) revert NoPendingWithdrawals();
-        // get address from head.next
+        // get receiver address from head.next
         address receiver = pendingWithdrawals[head].next;
+        // get owner address from receiver
+        address owner = pendingWithdrawals[receiver].owner;
         // get amount from receiver
-        uint256 amount = pendingWithdrawals[receiver].amount;
+        uint256 shares = pendingWithdrawals[receiver].shareAmount;
+        // amount in assets to withdraw
+        uint256 amountOutAssets = convertToAssets(shares);
         // update pending withdrawals and clear space once completed
         pendingWithdrawals[head].next = pendingWithdrawals[receiver].next;
         // update list size
         listSize--;
-        // transfer assets to receiver
-        asset.safeTransfer(receiver, amount);
-        // update reserves
-        usdcReserves -= amount;
-        emit WithdrawalCompleted(receiver, amount);
+        // call redeem to burn "owner" shares
+        redeem(shares, receiver, owner);
+        // transfer shares converted to the amount in assets to receiver address
+        asset.safeTransfer(receiver, amountOutAssets);
+        // update underlying reserves
+        usdcReserves -= amountOutAssets;
+        emit WithdrawalCompleted(receiver, amountOutAssets);
     }
 
     /// @notice OptionExchange Functions ////////////////////////
@@ -308,6 +325,7 @@ contract Vault is ERC4626 {
      * @return bool if the operation is valid
      * NOTE: only for rysk actions as of now (WIP)
      */
+/*
     function checkProdecure(IOptionExchange.OperationProcedures memory procedure) internal view returns (bool) {
         // OPYN
         if (procedure.operation == CombinedActions.OperationType.OPYN) {
@@ -316,7 +334,7 @@ contract Vault is ERC4626 {
         }
         // RYSK
         else if (procedure.operation == CombinedActions.OperationType.RYSK) {
-            // iterate through each action (ActionArg) in the procedure
+            // iterate through operationQueue/each action (ActionArg) in the procedure
             for(uint256 i = 0; i < procedure.operationQueue.length; i++) {
                 // load action args
                 CombinedActions.ActionArgs memory actionArgs = procedure.operationQueue[i];
@@ -328,14 +346,16 @@ contract Vault is ERC4626 {
                 }
                 // ISSUE OPTION
                 if (actionArgs.actionType == 0) {
+                    // assertions needed for issue
                     // strike price needs to be 1e18
                     // WIP
                     return true;
                 }
                 // BUY OPTION
                 else if (actionArgs.actionType == 1) {
+                    // assertions needed for buying
                     // decimal convert strike price
-                    /*(address series, Types.OptionSeries memory convertSeries, uint128 strikePrice) =
+                    (address series, Types.OptionSeries memory convertSeries, uint128 strikePrice) =
                         IOptionExchange(optionExchange).getOptionDetails(
                             optionSeries,
                         );
@@ -343,17 +363,19 @@ contract Vault is ERC4626 {
                     IOptionExchange(optionExchange).checkHash(
                         optionSeries,
 
-                    );*/
+                    );
                     // WIP
                     return true;
                 }
                 // SELL OPTION
                 else if (actionArgs.actionType == 2) {
+                    // assertions needed for selling
                     // WIP
                     return true;
                 }
                 // CLOSE OPTION
                 else if (actionArgs.actionType == 3) {
+                    // assertions needed for closing
                     // WIP
                     return true;
                 }
@@ -364,6 +386,7 @@ contract Vault is ERC4626 {
             }
         }
     }
+*/
 
 
     /** Struct specification for OperationProcedures
@@ -402,11 +425,11 @@ contract Vault is ERC4626 {
         if (msg.sender != fundOperator) revert OnlyFundOperator();
 
         // iterate through _operateProcedures to check validity
-        for(uint8 i = 0; i < _operateProcedures.length; i++) {
-            // validate the vault operator is making valid operation(s)
-            bool output = checkProdecure(_operateProcedures[i]);
-            if (output == false) revert InvalidOperation();
-        }
+        //for(uint8 i = 0; i < _operateProcedures.length; i++) {
+        //    // validate the vault operator is making valid operation(s)
+        //    bool output = checkProdecure(_operateProcedures[i]);
+        //    if (output == false) revert InvalidOperation();
+        //}
 
         // OptionExchange.operate()
         IOptionExchange(optionExchange).operate(_operateProcedures);
