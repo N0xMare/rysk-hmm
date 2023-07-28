@@ -13,23 +13,23 @@ import { IBeyondPricer } from "../src/interfaces/IBeyondPricer.sol";
 import { Types } from "../src/libraries/Types.sol";
 
 
-contract DeployHOMM is Script {
+contract Deploy is Script {
     /// Deploy v1
     function run() external {
         uint256 deployerPrivateKey = vm.envUint("DEPLOYER_KEY");
-        string memory rpc = vm.envString("ARBI_GOERLI_RPC_URL");
+        string memory rpc = vm.envString("RPC_URL");
 
         vm.createSelectFork(rpc);
         vm.startBroadcast(deployerPrivateKey);
 
         // Deploy Vault
         Vault vault = new Vault(
-            ERC20(0x408c5755b5c7a0a28D851558eA3636CfC5b5b19d),    // USDC
-            address(0x8e3e84E7F207b0b66BD8D902C293cF269C67a168),  // Controller
-            address(0xb672fE86693bF6f3b034730f5d2C77C8844d6b45),  // OptionExchange
-            address(0x4E89cc3215AF050Ceb63Ca62470eeC7C1A66F737),  // OptionRegistry
-            address(0x0B1Bf5fb77AA36cD48Baa1395Bc2B5fa0f135d8C),  // LiquidityPool
-            address(0xc939df369C0Fc240C975A6dEEEE77d87bCFaC259)   // beyondPricer
+            ERC20(0xaf88d065e77c8cC2239327C5EDb3A432268e5831),    // arb main-net USDC
+            address(0xC820739fEdF9A28bE29f73c29E167f0c14F1FE2a),  // arb main-net Controller
+            address(0xC117bf3103bd09552F9a721F0B8Bce9843aaE1fa),  // arb main-net OptionExchange
+            address(0x8Bc23878981a207860bA4B185fD065f4fd3c7725),  // arb main-net OptionRegistry
+            address(0x217749d9017cB87712654422a1F5856AAA147b80),  // arb main-net LiquidityPool
+            address(0xeA5Fb118862876f249Ff0b3e7fb25fEb38158def)   // arb main-net BeyondPricer
         );
 
         vm.stopBroadcast();
