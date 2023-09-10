@@ -354,7 +354,7 @@ contract VaultTest is Test, Minter {
         assertEq(underlying.balanceOf(address(this)), 0);
 
         // initiate withdraw on all shares
-        vault.initiateRedeem(shareAmount, address(this));
+        vault.initiateWithdraw(shareAmount, address(this));
 
         (uint256 requestedSharesAmount, address owner, address receiver) = vault.pendingWithdrawals(address(this));
 

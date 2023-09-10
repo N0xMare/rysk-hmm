@@ -22,7 +22,7 @@ import { CombinedActions } from "./libraries/CombinedActions.sol";
 import { RyskActions } from "./libraries/RyskActions.sol";
 
 /// @notice Tokenized Vault for Rysk Options Market, Wheel Trading Strategy
-contract Vault is ERC4626, ReentrancyGuard {
+contract ProtocolVault is ERC4626, ReentrancyGuard {
     using SafeTransferLib for ERC20;
     using FixedPointMathLib for uint256;
 
@@ -262,6 +262,68 @@ contract Vault is ERC4626, ReentrancyGuard {
 
     /// @notice OptionExchange Functions ////////////////////////
 
+    /**
+     * @notice check operator's execute() params for each prodecure are valid
+     * @param procedure CombinedActions.OperationProcedures struct used in calls to execute()
+     * @return bool if the operation is valid
+     * NOTE: only for rysk actions as of now (WIP)
+     */
+
+    function checkProdecure(IOptionExchange.OperationProcedures memory procedure) internal view returns (bool) {
+        // OPYN
+        if (procedure.operation == CombinedActions.OperationType.OPYN) {
+            // currently no checks for opyn operations
+            return true;
+        }
+        // RYSK
+        else if (procedure.operation == CombinedActions.OperationType.RYSK) {
+            // iterate through operationQueue/each action (ActionArg) in the procedure
+            for(uint256 i = 0; i < procedure.operationQueue.length; i++) {
+                // load action args
+                CombinedActions.ActionArgs memory actionArgs = procedure.operationQueue[i];
+                // load option series
+                Types.OptionSeries memory optionSeries = procedure.operationQueue[i].optionSeries;
+                // check option series expiration is not more than 60 days in the future
+                if (optionSeries.expiration > block.timestamp + 60 days) {
+                    return false;
+                }
+                // ISSUE OPTION
+                if (actionArgs.actionType == 0) {
+                    // assertions needed for issue
+                    // strike price needs to be 1e18
+                    // WIP
+                    return true;
+                }
+                // BUY OPTION
+                else if (actionArgs.actionType == 1) {
+                    // assertions needed for buying
+                    // decimal convert strike price
+                    
+                    // WIP
+                    return true;
+                }
+                // SELL OPTION
+                else if (actionArgs.actionType == 2) {
+                    // assertions needed for selling
+                    // WIP
+                    return true;
+                }
+                // CLOSE OPTION
+                else if (actionArgs.actionType == 3) {
+                    // assertions needed for closing
+                    // WIP
+                    return true;
+                }
+                // INVALID ACTION TYPE
+                else {
+                    return false;
+                }
+            }
+        }
+    }
+
+
+
     /** Struct specification for OperationProcedures
     ----------------------------------------------------------------
     struct OptionSeries {                  |    enum ActionType {
@@ -294,24 +356,21 @@ contract Vault is ERC4626, ReentrancyGuard {
      * @notice execute actions on Rysk (WIP)
      * @param _operateProcedures array of operations to execute on RYSK/OPYN
      */
-    /// NOTE: no execution checks, depositors trust the fund operator entirely to reimburse and
-    ///       behave in expected ways as no contract level assertions have been made
     function execute(IOptionExchange.OperationProcedures[] memory _operateProcedures) external {
         if (msg.sender != fundOperator) revert OnlyFundOperator();
+
+        // iterate through _operateProcedures to check validity
+        //for(uint8 i = 0; i < _operateProcedures.length; i++) {
+        //    // validate the vault operator is making valid operation(s)
+        //    bool output = checkProdecure(_operateProcedures[i]);
+        //    if (output == false) revert InvalidOperation();
+        //}
+
         // OptionExchange.operate()
         IOptionExchange(optionExchange).operate(_operateProcedures);
         // increment executionNonce
         executionNonce++;
         emit Execute(executionNonce, _operateProcedures);
-    }
-
-    /**
-     * @notice create an option token on rysk
-     * @param _optionSeries option series for the o token being created
-     * @return seriesAddress address of the option token
-     */
-    function createOptionToken(Types.OptionSeries memory _optionSeries) external returns (address seriesAddress) {
-        seriesAddress = IOptionExchange(optionExchange).createOtoken(_optionSeries);
     }
 
     /// @notice OptionRegistry ///////////////////////////////////
@@ -321,7 +380,7 @@ contract Vault is ERC4626, ReentrancyGuard {
      * @param _series the address of the option token to be burnt and redeemed
      * @return amount of underlying asset amount returned
      */
-    function redeemOptionToken(address _series) public returns (uint256) {
+    function redeemOptionTokens(address _series) public returns (uint256) {
         if (msg.sender != fundOperator) revert OnlyFundOperator();
         // redeem option tokens
         return IOptionRegistry(optionRegistry).redeem(_series);

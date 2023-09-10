@@ -21,5 +21,7 @@ interface IOptionExchange {
 		Types.OptionSeries memory optionSeries
 	) external view returns (address, Types.OptionSeries memory, uint128);
 
+    function createOtoken(Types.OptionSeries memory optionSeries) external returns (address);
+
     function operate(OperationProcedures[] memory _operationProcedures) external;
 }
