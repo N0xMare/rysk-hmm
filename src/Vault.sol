@@ -2,7 +2,6 @@
 pragma solidity ^0.8.19;
 
 /// @notice solmate
-import { ERC4626 } from "solmate/mixins/ERC4626.sol";
 import { ERC20 } from "solmate/tokens/ERC20.sol";
 import { SafeTransferLib } from "solmate/utils/SafeTransferLib.sol";
 import { FixedPointMathLib } from "solmate/utils/FixedPointMathLib.sol";
@@ -21,8 +20,11 @@ import { Types } from "./libraries/Types.sol";
 import { CombinedActions } from "./libraries/CombinedActions.sol";
 import { RyskActions } from "./libraries/RyskActions.sol";
 
+/// @title Test
+import "forge-std/Test.sol";
+
 /// @notice Tokenized Vault for Rysk Options Market, Wheel Trading Strategy
-contract Vault is ERC4626, ReentrancyGuard {
+contract Vault is ERC20, ReentrancyGuard, Test {
     using SafeTransferLib for ERC20;
     using FixedPointMathLib for uint256;
 
@@ -30,12 +32,19 @@ contract Vault is ERC4626, ReentrancyGuard {
     /*                        EVENTS                              */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @notice emitted when withdrawal is completed by the operator
-    event WithdrawalCompleted(address indexed recipient, uint256 amount);
+    /// @notice emitted when a deposit into the vault occurs
+    event Deposit(address indexed caller, address indexed owner, uint256 assets, uint256 shares);
+
+    /// @notice emitted when a withdrawal is completed by the fund operator
+    event Withdraw(
+        address indexed caller,
+        address indexed receiver,
+        address indexed owner,
+        uint256 assets,
+        uint256 shares
+    );
 
     /// @notice emitted when execute() is called
-    // foreach execute() call there is a nonce, `operateCallNonce`
-    // foreach operation within the operation procedure struct there is a nonce, `operationNonce`
     event Execute(
         uint256 indexed executionNonce, 
         IOptionExchange.OperationProcedures[] operationProcedures
@@ -67,10 +76,8 @@ contract Vault is ERC4626, ReentrancyGuard {
         address next;
     }
 
-    /// @notice reserves, USDC balance of this contract
-    uint256 public usdcReserves;
-    /// @notice active capital, USDC balance deployed in vault strategy managed by the operator
-    uint256 public activeCapital;
+    /// TODO
+    // uint256 public activeCapital;
     // NOTE: PnL calc, is checking difference between assets received back from trades with activeCapital amount we txs out of vault
 
     /// @notice pending withdrawals map (receiver => Withdrawal(amount, next_receiver_addr))
@@ -88,8 +95,6 @@ contract Vault is ERC4626, ReentrancyGuard {
 
     /// @notice operate() nonce
     uint256 public executionNonce;
-    /// @notice operation nonce
-    uint8 public operationNonce;
 
     /// @notice strategy contracts
     // Rysk option exchange
@@ -100,6 +105,11 @@ contract Vault is ERC4626, ReentrancyGuard {
     address public liquidityPool;
     // Rysk options pricing
     address public beyondPricer;
+
+    /// @notice underlying vault asset
+    ERC20 public immutable asset;
+
+    // ERC4626(_asset, "Rysk USDC Vault", "ryskUSDC")s
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                     CONSTRUCTOR                            */
@@ -119,16 +129,18 @@ contract Vault is ERC4626, ReentrancyGuard {
         address _optionRegistry,
         address _liquidityPool,
         address _beyondPricer
-        )
-        ERC4626(_asset, "Rysk USDC Vault", "ryskUSDC")
+    ) ERC20("Rysk USDC Vault", "ryskUSDC", _asset.decimals())
         {
+        // set underlying collateral asset
+        asset = _asset;
         // set fund operator
         fundOperator = msg.sender;
+        // set external contracts
         optionExchange = _optionExchange;
         optionRegistry = _optionRegistry;
         liquidityPool = _liquidityPool;
         beyondPricer = _beyondPricer;
-        // set optionExchange as operator in controller
+        // initial configuration, set optionExchange as operator in controller
         IController(_controller).setOperator(address(optionExchange), true);
         // initialize pending withdrawals
         pendingWithdrawals[head] = Withdrawal({shareAmount: 0, owner: head, next: head});
@@ -144,11 +156,13 @@ contract Vault is ERC4626, ReentrancyGuard {
      * @param receiver address to send "shares" to
      * @return shares amount of Vault shares minted
      */
-    function deposit(uint256 assets, address receiver) public override nonReentrant returns (uint256 shares) {
-        // deposit
-        shares = super.deposit(assets, receiver);
-        // update reserves
-        usdcReserves += assets;
+    function deposit(uint256 assets, address receiver) public nonReentrant returns (uint256 shares) {
+        // Check for rounding error since we round down in previewDeposit.
+        require((shares = previewDeposit(assets)) != 0, "ZERO_SHARES");
+        // Need to transfer before minting or ERC777s could reenter.
+        asset.safeTransferFrom(msg.sender, address(this), assets);
+        _mint(receiver, shares);
+        emit Deposit(msg.sender, receiver, assets, shares);
     }
 
     /**
@@ -177,12 +191,15 @@ contract Vault is ERC4626, ReentrancyGuard {
             revert PendingWithdrawalAddressErr();
         }
 
+        // approve fund operator to burn shares to complete the withdrawal
+        approve(fundOperator, shares);
+
         // update pending withdrawals
         // new withdrawal inserted at the front of the list takes the current heads next address
         // can either be the head address `address(1)` if the list is empty, receiving its first element, or
         // if the list is not empty the next address of the current head
         pendingWithdrawals[receiver] = Withdrawal({
-            shareAmount: currentShares + shares,
+            shareAmount: currentWithdrawAmount + shares,
             owner: msg.sender,
             next: pendingWithdrawals[head].next
         });
@@ -216,8 +233,34 @@ contract Vault is ERC4626, ReentrancyGuard {
     /**
      * @notice Returns the total amount of "assets" (USDC) held by this contract.
      */
-    function totalAssets() public view override returns (uint256 assets) {
+    function totalAssets() public view returns (uint256 assets) {
         return asset.balanceOf(address(this));
+    }
+
+    function convertToShares(uint256 assets) public view returns (uint256) {
+        uint256 supply = totalSupply; // Saves an extra SLOAD if totalSupply is non-zero.
+        return supply == 0 ? assets : assets.mulDivDown(supply, totalAssets());
+    }
+
+    function convertToAssets(uint256 shares) public view returns (uint256) {
+        uint256 supply = totalSupply; // Saves an extra SLOAD if totalSupply is non-zero.
+        return supply == 0 ? shares : shares.mulDivDown(totalAssets(), supply);
+    }
+
+    function previewDeposit(uint256 assets) public view virtual returns (uint256) {
+        return convertToShares(assets);
+    }
+
+    function previewRedeem(uint256 shares) public view virtual returns (uint256) {
+        return convertToAssets(shares);
+    }
+
+    function maxDeposit(address) public view virtual returns (uint256) {
+        return type(uint256).max;
+    }
+
+    function maxRedeem(address owner) public view virtual returns (uint256) {
+        return balanceOf[owner];
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -245,19 +288,14 @@ contract Vault is ERC4626, ReentrancyGuard {
         address owner = pendingWithdrawals[receiver].owner;
         // get amount from receiver
         uint256 shares = pendingWithdrawals[receiver].shareAmount;
-        // amount in assets to withdraw
-        uint256 amountOutAssets = convertToAssets(shares);
         // update pending withdrawals and clear space once completed
         pendingWithdrawals[head].next = pendingWithdrawals[receiver].next;
         // update list size
         listSize--;
-        // call redeem to burn "owner" shares
-        redeem(shares, receiver, owner);
-        // transfer shares converted to the amount in assets to receiver address
-        asset.safeTransfer(receiver, amountOutAssets);
-        // update underlying reserves
-        usdcReserves -= amountOutAssets;
-        emit WithdrawalCompleted(receiver, amountOutAssets);
+        // call redeem to burn "owner" shares and transfer out the underlying assets to "receiver"
+        _redeem(shares, receiver, owner);
+        // clear pending withdrawal
+        delete pendingWithdrawals[receiver];
     }
 
     /// @notice OptionExchange Functions ////////////////////////
@@ -338,5 +376,26 @@ contract Vault is ERC4626, ReentrancyGuard {
         if (msg.sender != fundOperator) revert OnlyFundOperator();
         // get option price from BeyondPricer
         return IBeyondPricer(beyondPricer).quoteOptionPrice(_optionSeries, _amount, _isSell, _netDhvExposure);
+    }
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                    INTERNAL FUNCTIONS                      */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    function _redeem(
+        uint256 shares,
+        address receiver,
+        address owner
+    ) internal returns (uint256 assets) {
+        if (msg.sender != owner) {
+            uint256 allowed = allowance[owner][msg.sender]; // Saves gas for limited approvals.
+            if (allowed != type(uint256).max) allowance[owner][msg.sender] = allowed - shares;
+        }
+        // Check for rounding error since we round down in previewRedeem.
+        require((assets = previewRedeem(shares)) != 0, "ZERO_ASSETS");
+        _burn(owner, shares);
+
+        emit Withdraw(msg.sender, receiver, owner, assets, shares);
+        asset.safeTransfer(receiver, assets);
     }
 }

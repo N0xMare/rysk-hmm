@@ -99,66 +99,12 @@ contract VaultTest is Test, Minter {
 
 
     /// @notice from solmate test suite
-    function testMultipleMintDepositRedeemWithdraw() public {
-        // Scenario:
-        // A = Alice, B = Bob
-        //  ________________________________________________________
-        // | Vault shares | A share | A assets | B share | B assets |
-        // |========================================================|
-        // | 1. Alice mints 2000 shares (costs 2000 tokens)         |
-        // |--------------|---------|----------|---------|----------|
-        // |         2000 |    2000 |     2000 |       0 |        0 |
-        // |--------------|---------|----------|---------|----------|
-        // | 2. Bob deposits 4000 tokens (mints 4000 shares)        |
-        // |--------------|---------|----------|---------|----------|
-        // |         6000 |    2000 |     2000 |    4000 |     4000 |
-        // |--------------|---------|----------|---------|----------|
-        // | 3. Vault mutates by +3000 tokens...                    |
-        // |    (simulated yield returned from strategy)...         |
-        // |--------------|---------|----------|---------|----------|
-        // |         6000 |    2000 |     3000 |    4000 |     6000 |
-        // |--------------|---------|----------|---------|----------|
-        // | 4. Alice deposits 2000 tokens (mints 1333 shares)      |
-        // |--------------|---------|----------|---------|----------|
-        // |         7333 |    3333 |     4999 |    4000 |     6000 |
-        // |--------------|---------|----------|---------|----------|
-        // | 5. Bob mints 2000 shares (costs 3001 assets)           |
-        // |    NOTE: Bob's assets spent got rounded up             |
-        // |    NOTE: Alice's vault assets got rounded up           |
-        // |--------------|---------|----------|---------|----------|
-        // |         9333 |    3333 |     5000 |    6000 |     9000 |
-        // |--------------|---------|----------|---------|----------|
-        // | 6. Vault mutates by +3000 tokens...                    |
-        // |    (simulated yield returned from strategy)            |
-        // |    NOTE: Vault holds 17001 tokens, but sum of          |
-        // |          assetsOf() is 17000.                          |
-        // |--------------|---------|----------|---------|----------|
-        // |         9333 |    3333 |     6071 |    6000 |    10929 |
-        // |--------------|---------|----------|---------|----------|
-        // | 7. Alice redeem 1333 shares (2428 assets)              |
-        // |--------------|---------|----------|---------|----------|
-        // |         8000 |    2000 |     3643 |    6000 |    10929 |
-        // |--------------|---------|----------|---------|----------|
-        // | 8. Bob withdraws 2928 assets (1608 shares)             |
-        // |--------------|---------|----------|---------|----------|
-        // |         6392 |    2000 |     3643 |    4392 |     8000 |
-        // |--------------|---------|----------|---------|----------|
-        // | 9. Alice withdraws 3643 assets (2000 shares)           |
-        // |    NOTE: Bob's assets have been rounded back up        |
-        // |--------------|---------|----------|---------|----------|
-        // |         4392 |       0 |        0 |    4392 |     8001 |
-        // |--------------|---------|----------|---------|----------|
-        // | 10. Bob redeem 4392 shares (8001 tokens)               |
-        // |--------------|---------|----------|---------|----------|
-        // |            0 |       0 |        0 |       0 |        0 |
-        // |______________|_________|__________|_________|__________|
-
+    function testMultipleDepositRedeem() public {
         address alice = address(0xABCD);
         address bob = address(0xDCBA);
 
         uint256 mutationUnderlyingAmount = 3000;
 
-        //underlying.mint(alice, 4000);
         Minter.mintUSDCL2(alice, 4000, address(underlying));
 
         vm.prank(alice);
@@ -166,7 +112,6 @@ contract VaultTest is Test, Minter {
 
         assertEq(underlying.allowance(alice, address(vault)), 4000);
 
-        //underlying.mint(bob, 7001);
         Minter.mintUSDCL2(bob, 7001, address(underlying));
 
         vm.prank(bob);
@@ -174,29 +119,29 @@ contract VaultTest is Test, Minter {
 
         assertEq(underlying.allowance(bob, address(vault)), 7001);
 
-        // 1. Alice mints 2000 shares (costs 2000 tokens)
+        // 1. Alice deposits 2000 assets
         vm.prank(alice);
-        uint256 aliceUnderlyingAmount = vault.mint(2000, alice);
+        uint256 aliceSharesOutputAmount = vault.deposit(2000, alice);
 
-        uint256 aliceShareAmount = vault.previewDeposit(aliceUnderlyingAmount);
+        uint256 aliceSharePreviewAmount = vault.previewDeposit(vault.convertToAssets(aliceSharesOutputAmount));
 
         // Expect to have received the requested mint amount.
-        assertEq(aliceShareAmount, 2000);
-        assertEq(vault.balanceOf(alice), aliceShareAmount);
-        assertEq(vault.convertToAssets(vault.balanceOf(alice)), aliceUnderlyingAmount);
-        assertEq(vault.convertToShares(aliceUnderlyingAmount), vault.balanceOf(alice));
+        assertEq(aliceSharePreviewAmount, 2000);
+        assertEq(vault.balanceOf(alice), aliceSharePreviewAmount);
+        assertEq(vault.convertToAssets(vault.balanceOf(alice)), vault.convertToAssets(aliceSharesOutputAmount));
+        assertEq(aliceSharesOutputAmount, vault.balanceOf(alice));
 
         // Expect a 1:1 ratio before mutation.
-        assertEq(aliceUnderlyingAmount, 2000);
+        assertEq(vault.convertToAssets(aliceSharesOutputAmount), 2000);
 
         // Sanity check.
-        assertEq(vault.totalSupply(), aliceShareAmount);
-        assertEq(vault.totalAssets(), aliceUnderlyingAmount);
+        assertEq(vault.totalSupply(), aliceSharePreviewAmount);
+        assertEq(vault.totalAssets(), vault.convertToAssets(aliceSharesOutputAmount));
 
         // 2. Bob deposits 4000 tokens (mints 4000 shares)
         vm.prank(bob);
         uint256 bobShareAmount = vault.deposit(4000, bob);
-        uint256 bobUnderlyingAmount = vault.previewWithdraw(bobShareAmount);
+        uint256 bobUnderlyingAmount = vault.previewRedeem(bobShareAmount);
 
         // Expect to have received the requested underlying amount.
         assertEq(bobUnderlyingAmount, 4000);
@@ -208,8 +153,8 @@ contract VaultTest is Test, Minter {
         assertEq(bobShareAmount, bobUnderlyingAmount);
 
         // Sanity check.
-        uint256 preMutationShareBal = aliceShareAmount + bobShareAmount;
-        uint256 preMutationBal = aliceUnderlyingAmount + bobUnderlyingAmount;
+        uint256 preMutationShareBal = aliceSharePreviewAmount + bobShareAmount;
+        uint256 preMutationBal = vault.convertToAssets(aliceSharesOutputAmount) + bobUnderlyingAmount;
         assertEq(vault.totalSupply(), preMutationShareBal);
         assertEq(vault.totalAssets(), preMutationBal);
         assertEq(vault.totalSupply(), 6000);
@@ -221,15 +166,16 @@ contract VaultTest is Test, Minter {
         // Alice share is 33.33% of the Vault, Bob 66.66% of the Vault.
         // Alice's share count stays the same but the underlying amount changes from 2000 to 3000.
         // Bob's share count stays the same but the underlying amount changes from 4000 to 6000.
-        // underlying.mint(address(vault), mutationUnderlyingAmount);
         Minter.mintUSDCL2(address(vault), mutationUnderlyingAmount, address(underlying));
+
         assertEq(vault.totalSupply(), preMutationShareBal);
         assertEq(vault.totalAssets(), preMutationBal + mutationUnderlyingAmount);
-        assertEq(vault.balanceOf(alice), aliceShareAmount);
+        assertEq(vault.balanceOf(alice), aliceSharePreviewAmount);
         assertEq(
             vault.convertToAssets(vault.balanceOf(alice)),
-            aliceUnderlyingAmount + (mutationUnderlyingAmount / 3) * 1
+            aliceSharesOutputAmount + (mutationUnderlyingAmount / 3) * 1
         );
+        
         assertEq(vault.balanceOf(bob), bobShareAmount);
         assertEq(vault.convertToAssets(vault.balanceOf(bob)), bobUnderlyingAmount + (mutationUnderlyingAmount / 3) * 2);
 
@@ -243,11 +189,11 @@ contract VaultTest is Test, Minter {
         assertEq(vault.balanceOf(bob), 4000);
         assertEq(vault.convertToAssets(vault.balanceOf(bob)), 6000);
 
-        // 5. Bob mints 2000 shares (costs 3001 assets)
+        // 5. Bob deposits with 2000 assets
         // NOTE: Bob's assets spent got rounded up
         // NOTE: Alices's vault assets got rounded up
         vm.prank(bob);
-        vault.mint(2000, bob);
+        vault.deposit(3001, bob);
 
         assertEq(vault.totalSupply(), 9333);
         assertEq(vault.balanceOf(alice), 3333);
@@ -264,15 +210,30 @@ contract VaultTest is Test, Minter {
 
         // 6. Vault mutates by +3000 tokens
         // NOTE: Vault holds 17001 tokens, but sum of assetsOf() is 17000.
-        //underlying.mint(address(vault), mutationUnderlyingAmount);
         Minter.mintUSDCL2(address(vault), mutationUnderlyingAmount, address(underlying));
         assertEq(vault.totalAssets(), 17001);
         assertEq(vault.convertToAssets(vault.balanceOf(alice)), 6071);
         assertEq(vault.convertToAssets(vault.balanceOf(bob)), 10929);
 
-        // 7. Alice redeem 1333 shares (2428 assets)
+        // 7. Alice intiates a withdraw of 1333 shares (2428 assets)
         vm.prank(alice);
-        vault.redeem(1333, alice, alice);
+        vault.initiateWithdraw(1333, alice);
+
+        {
+            // check alice's pending withdrawal
+            (uint256 requestedSharesAmountOut, address owner, address next) 
+                = vault.pendingWithdrawals(alice);
+
+            // pending withdraw has correct amount of shares
+            assertEq(requestedSharesAmountOut, 1333);
+            // pending withdraw has correct owner
+            assertEq(owner, alice);
+            // pending withdraw has correct next address, only 1 active withdraw so next should be the head of the list
+            assertEq(next, address(1));
+        }
+
+        // fund operator, address(this), completes alice's withdraw
+        vault.completeWithdrawal();
 
         assertEq(underlying.balanceOf(alice), 2428);
         assertEq(vault.totalSupply(), 8000);
@@ -282,35 +243,88 @@ contract VaultTest is Test, Minter {
         assertEq(vault.balanceOf(bob), 6000);
         assertEq(vault.convertToAssets(vault.balanceOf(bob)), 10929);
 
-        // 8. Bob withdraws 2929 assets (1608 shares)
+        // 8. Bob withdraws 2929 shares (5335 assets)
         vm.prank(bob);
-        vault.withdraw(2929, bob, bob);
+        vault.initiateWithdraw(2929, bob);
 
-        assertEq(underlying.balanceOf(bob), 2929);
-        assertEq(vault.totalSupply(), 6392);
-        assertEq(vault.totalAssets(), 11644);
+        {
+            // check bob's pending withdrawal
+            (uint256 requestedSharesAmountOut, address owner, address next) 
+                = vault.pendingWithdrawals(bob);
+            // pending withdraw has correct amount of shares
+            assertEq(requestedSharesAmountOut, 2929);
+            // pending withdraw has correct owner
+            assertEq(owner, bob);
+            // pending withdraw has correct next address, only 1 active withdraw so next should be the head of the list
+            assertEq(next, address(1));
+        }
+
+        // fund operator, address(this), completes bob's withdraw
+        vault.completeWithdrawal();
+
+        // assets(2929 shares) = 5335
+        assertEq(underlying.balanceOf(bob), vault.convertToAssets(2929));
+        assertEq(vault.totalSupply(), 5071);
+        // 14573 - 5335 = 9238
+        assertEq(vault.totalAssets(), 9238);
         assertEq(vault.balanceOf(alice), 2000);
         assertEq(vault.convertToAssets(vault.balanceOf(alice)), 3643);
-        assertEq(vault.balanceOf(bob), 4392);
-        assertEq(vault.convertToAssets(vault.balanceOf(bob)), 8000);
+        // 6000 - 2929 = 3071
+        assertEq(vault.balanceOf(bob), 3071);
+        // assets(3071 shares) | 9238-3643 = 5594 (1 wei rounding off)
+        assertEq(vault.convertToAssets(vault.balanceOf(bob)), 5594);
 
-        // 9. Alice withdraws 3643 assets (2000 shares)
+        // 9. Alice initiates withdraws of 2000 shares (3643 assets), last of her shares
         // NOTE: Bob's assets have been rounded back up
         vm.prank(alice);
-        vault.withdraw(3643, alice, alice);
+        vault.initiateWithdraw(2000, alice);
 
-        assertEq(underlying.balanceOf(alice), 6071);
-        assertEq(vault.totalSupply(), 4392);
-        assertEq(vault.totalAssets(), 8001);
-        assertEq(vault.balanceOf(alice), 0);
-        assertEq(vault.convertToAssets(vault.balanceOf(alice)), 0);
-        assertEq(vault.balanceOf(bob), 4392);
-        assertEq(vault.convertToAssets(vault.balanceOf(bob)), 8001);
+        {
+            // check alice's pending withdrawal
+            (uint256 requestedSharesAmountOut, address owner, address next) 
+                = vault.pendingWithdrawals(alice);
+            // pending withdraw has correct amount of shares
+            assertEq(requestedSharesAmountOut, 2000);
+            // pending withdraw has correct owner
+            assertEq(owner, alice);
+            // pending withdraw has correct next address, only 1 active withdraw so next should be the head of the list
+            assertEq(next, address(1));
+        }
 
-        // 10. Bob redeem 4392 shares (8001 tokens)
+        // 10. Bob redeem 3071 shares (5594 assets), last of his shares
         vm.prank(bob);
-        vault.redeem(4392, bob, bob);
-        assertEq(underlying.balanceOf(bob), 10930);
+        vault.initiateWithdraw(3071, bob);
+
+        {
+            // check bob's pending withdrawal
+            (uint256 requestedSharesAmountOut, address owner, address next) 
+                = vault.pendingWithdrawals(bob);
+            // pending withdraw has correct amount of shares
+            assertEq(requestedSharesAmountOut, 3071);
+            // pending withdraw has correct owner
+            assertEq(owner, bob);
+            // pending withdraw has correct next address, 2 active withdraws so next should be the 
+            // address before which is alice's withdraw
+            assertEq(next, alice);
+        }
+
+        // 11. multi withdraw scenario
+
+        // fund operator completes 1st withdraw request, bob's, since he was the lastest to initiate a withdraw
+        vault.completeWithdrawal();
+
+        assertEq(underlying.balanceOf(bob), 10929);
+        assertEq(vault.totalSupply(), 2000);
+        assertEq(vault.totalAssets(), 3644); // 3643 + 1 wei rounding leftover from bob's completed withdraw
+        assertEq(vault.balanceOf(alice), 2000);
+        assertEq(vault.convertToAssets(vault.balanceOf(alice)), 3644); // 3643 + 1 wei
+        assertEq(vault.balanceOf(bob), 0);
+        assertEq(vault.convertToAssets(vault.balanceOf(bob)), 0);
+
+        // fund operator completes 2nd withdraw request, alice's, since she was the first to initiate a withdraw
+        vault.completeWithdrawal();
+
+        assertEq(underlying.balanceOf(alice), 6072);
         assertEq(vault.totalSupply(), 0);
         assertEq(vault.totalAssets(), 0);
         assertEq(vault.balanceOf(alice), 0);
@@ -323,12 +337,6 @@ contract VaultTest is Test, Minter {
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-    /*                       TIME TESTS                           */
-    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
-
-    /// TODO: time restrictions for fund operator strategy
-
-    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                    OPERATOR TESTS                          */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
@@ -339,79 +347,8 @@ contract VaultTest is Test, Minter {
         assertEq(vault.fundOperator(), address(0xbeef));
     }
 
-    /// test complete withdrawal
-    function testCompleteWithdrawal() external {
-        // approve for vault deposit
-        // mint USDC to address(this)
-        Minter.mintUSDCL2(address(this), 10 ** 26, address(underlying));
-        // max approve vault to spend USDC for address(this)
-        underlying.approve(address(vault), type(uint256).max);
-
-        // address(this) mints vault shares using deposit of underlying
-        uint256 shareAmount = vault.deposit(10 ** 26, address(this));
-
-        // assert underlying balance of user is now 0 because of the deposit
-        assertEq(underlying.balanceOf(address(this)), 0);
-
-        // initiate withdraw on all shares
-        vault.initiateWithdraw(shareAmount, address(this));
-
-        (uint256 requestedSharesAmount, address owner, address receiver) = vault.pendingWithdrawals(address(this));
-
-        emit log_named_uint("requestedSharesAmount log", requestedSharesAmount);
-        emit log_named_uint("Share Amount ", shareAmount);
-
-        // assert pendingWithdrawal exists in mapping and returns correct shares amount
-        //assertEq(requestedSharesAmount, shareAmount);
-/*
-        // complete withdrawal
-        vault.completeWithdrawal();
-
-        // pending withdrawal after completion of the withdrawal
-        (uint256 requestedShareAmountAfter, address ownerAfter, address nextAddressAfter) = 
-            vault.pendingWithdrawals(address(this));
-
-        // assert now that withdrawal is completed that the request share amount is 0 for this receiver address
-        assertEq(requestedShareAmountAfter, 0);
-        emit log_named_uint("pendingwithdrawal share amount after completion", requestedShareAmountAfter);
-        //assertEq(nextAddressAfter, address(0));
-        emit log_named_address("owner address after completion", ownerAfter);
-        emit log_named_address("next address after completion", nextAddressAfter);
-        // total assets should be equal to vault balance of collateral asset always
-        //assertEq(vault.totalAssets(), underlying.balanceOf(address(vault)));
-        emit log_named_uint("Total Assets of Vault after withdrawal completed", vault.totalAssets());
-        emit log_named_uint("USDC Balance of Vault after withdrawal completed", underlying.balanceOf(address(vault)));
-        // shares should be 0 for address(this)
-        //assertEq(vault.balanceOf(address(this)), 0);
-        emit log_named_uint("VaultShare Balance of depositer after completion", vault.balanceOf(address(this)));
-        // underlying balance of vault should be 0
-        //assertEq(underlying.balanceOf(address(vault)), 0);
-        emit log_named_uint("USDC Balance of Vault after withdrawal completed", underlying.balanceOf(address(vault)));
-*/
-    }
-
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                        HELPERS                             */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
-/*
-    function _preLoadDeposit(uint256 _amount, address _receiver) internal returns (uint256 shareAmount) {
-        mintUSDCL2(_receiver, _amount, address(underlying));
 
-        // approve vault to spend USDC
-        underlying.approve(address(vault), type(uint256).max);
-
-        // mint vault shares
-        uint256 shareAmount = vault.deposit(_amount, address(this));
-    }
-
-    function _preLoadMint(uint256 _amount, address _receiver) internal returns (uint256 assetAmount) {
-        mintUSDCL2(_receiver, _amount, address(underlying));
-
-        // approve vault to spend USDC
-        underlying.approve(address(vault), type(uint256).max);
-
-        // mint vault shares
-        uint256 shareAmount = vault.deposit(_amount, address(this));
-    }
-*/
 }
